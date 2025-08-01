@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDB Structure Viewer</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+    <script src="https://3Dmol.org/build/3Dmol.ui-min.js"></script>
+    <style>
+        body, html {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #viewer {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        #error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: red;
+            font-family: Arial, sans-serif;
+            display: none;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 100;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 5px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        .control-button {
+            margin: 2px;
+            padding: 3px 6px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .control-button:hover {
+            background-color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div id="viewer"></div>
+    <div id="loading">Loading structure...</div>
+    <div id="error">Error loading structure</div>
+    <div id="controls" style="display: none;">
+        <div class="control-button" id="cartoon-button">Cartoon</div>
+        <div class="control-button" id="surface-button">Surface</div>
+        <div class="control-button" id="stick-button">Stick</div>
+        <div class="control-button" id="sphere-button">Sphere</div>
+        <div class="control-button" id="binding-site-button">Show Binding Site</div>
+    </div>
+
+    <script>
+        // Get parameters from query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const pdbUrl = urlParams.get('pdbUrl');
+        const bindingSiteId = urlParams.get('bindingSiteId');
+        const centerStr = urlParams.get('center');
+        const radius = urlParams.get('radius');
+        
+        let center = null;
+        if (centerStr) {
+            try {
+                center = JSON.parse(centerStr);
+            } catch (e) {
+                console.error('Error parsing center coordinates:', e);
+            }
+        }
+        
+        console.log('Loading PDB from URL:', pdbUrl);
+        console.log('Binding site:', bindingSiteId, center, radius);
+        
+        if (!pdbUrl) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').innerText = 'No PDB URL provided';
+        } else {
+            // Initialize the viewer when the page is loaded
+            $(document).ready(function() {
+                // Create the viewer
+                const viewer = $3Dmol.createViewer($("#viewer"), {
+                    backgroundColor: 'white'
+                });
+                
+                let model = null;
+                let bindingSiteShown = false;
+                
+                // Fetch the PDB data
+                fetch(pdbUrl)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Failed to fetch PDB: ${response.status} ${response.statusText}`);
+                        }
+                        return response.text();
+                    })
+                    .then(pdbData => {
+                        console.log('PDB data loaded, length:', pdbData.length);
+                        
+                        // Add the molecule to the viewer
+                        model = viewer.addModel(pdbData, 'pdb');
+                        
+                        // Set the style
+                        viewer.setStyle({}, { cartoon: { color: 'spectrum' } });
+                        
+                        // Show controls
+                        document.getElementById('controls').style.display = 'flex';
+                        
+                        // Highlight binding site if provided
+                        if (bindingSiteId && center && radius) {
+                            highlightBindingSite();
+                        } else {
+                            // Add some surface
+                            viewer.addSurface($3Dmol.SurfaceType.VDW, {
+                                opacity: 0.7,
+                                color: 'white'
+                            });
+                        }
+                        
+                        // Zoom to fit the molecule
+                        viewer.zoomTo();
+                        
+                        // Render the scene
+                        viewer.render();
+                        
+                        // Hide loading indicator
+                        document.getElementById('loading').style.display = 'none';
+                        
+                        console.log('Molecule rendered successfully');
+                    })
+                    .catch(error => {
+                        console.error('Error loading PDB:', error);
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('error').style.display = 'block';
+                        document.getElementById('error').innerText = `Error: ${error.message}`;
+                    });
+                
+                // Function to highlight binding site
+                function highlightBindingSite() {
+                    if (!center || !radius) return;
+                    
+                    // Clear any existing surfaces
+                    viewer.removeAllSurfaces();
+                    
+                    // Create a sphere to represent the binding site
+                    const sphere = viewer.addSphere({
+                        center: {x: center.x, y: center.y, z: center.z},
+                        radius: parseFloat(radius),
+                        color: 'rgba(255, 165, 0, 0.5)' // Semi-transparent orange
+                    });
+                    
+                    // Add a colored surface for residues within the binding site
+                    viewer.addSurface($3Dmol.SurfaceType.VDW, {
+                        opacity: 0.8,
+                        color: 'white'
+                    });
+                    
+                    // Color the protein normally except for binding site
+                    viewer.setStyle({}, { cartoon: { color: 'lightgray' } });
+                    
+                    // Create a selection for atoms within the binding site
+                    const bindingSiteAtoms = viewer.getModel().selectedAtoms({
+                        predicate: function(atom) {
+                            const dx = atom.x - center.x;
+                            const dy = atom.y - center.y;
+                            const dz = atom.z - center.z;
+                            const distSquared = dx*dx + dy*dy + dz*dz;
+                            return distSquared <= radius * radius;
+                        }
+                    });
+                    
+                    // Highlight the binding site residues
+                    viewer.setStyle({within: {distance: radius, center: center}}, 
+                        { cartoon: { color: 'spectrum' } });
+                    
+                    bindingSiteShown = true;
+                    viewer.render();
+                }
+                
+                // Function to hide binding site highlight
+                function hideBindingSite() {
+                    viewer.removeAllSurfaces();
+                    viewer.setStyle({}, { cartoon: { color: 'spectrum' } });
+                    
+                    // Add default surface
+                    viewer.addSurface($3Dmol.SurfaceType.VDW, {
+                        opacity: 0.7,
+                        color: 'white'
+                    });
+                    
+                    bindingSiteShown = false;
+                    viewer.render();
+                }
+                
+                // Set up control buttons
+                document.getElementById('cartoon-button').addEventListener('click', function() {
+                    viewer.setStyle({}, { cartoon: { color: 'spectrum' } });
+                    viewer.render();
+                });
+                
+                document.getElementById('surface-button').addEventListener('click', function() {
+                    viewer.removeAllSurfaces();
+                    viewer.addSurface($3Dmol.SurfaceType.VDW, {
+                        opacity: 0.7,
+                        color: 'white'
+                    });
+                    viewer.render();
+                });
+                
+                document.getElementById('stick-button').addEventListener('click', function() {
+                    viewer.setStyle({}, { stick: {} });
+                    viewer.render();
+                });
+                
+                document.getElementById('sphere-button').addEventListener('click', function() {
+                    viewer.setStyle({}, { sphere: {} });
+                    viewer.render();
+                });
+                
+                document.getElementById('binding-site-button').addEventListener('click', function() {
+                    if (bindingSiteShown) {
+                        hideBindingSite();
+                        this.innerText = 'Show Binding Site';
+                    } else {
+                        highlightBindingSite();
+                        this.innerText = 'Hide Binding Site';
+                    }
+                });
+                
+                // Listen for messages from parent window
+                window.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'HIGHLIGHT_BINDING_SITE') {
+                        const site = event.data.site;
+                        if (site && site.center && site.radius) {
+                            center = site.center;
+                            radius = site.radius;
+                            highlightBindingSite();
+                            document.getElementById('binding-site-button').innerText = 'Hide Binding Site';
+                        }
+                    }
+                });
+            });
+        }
+    </script>
+</body>
+</html>

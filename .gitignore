@@ -1,0 +1,29 @@
+# Ignore node_modules
+**/node_modules
+
+# Ignore build artifacts
+*.exe
+*.exe~
+
+# Log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Unnecessary OS files
+.DS_Store
+
+# Ignore temporary upload folders
+/uploads/
+
+# Ignore Next.js build output
+/.next/
+/out/
+
+# Ignore local env files
+.env*.local
+
+# Ignore mangled path directories
+C??Users?*

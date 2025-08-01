@@ -1,0 +1,26 @@
+{
+  "profiles": {
+    "cmdqyn00p000001pdhrfqp0gb": {
+      "id": "cmdqyn00p000001pdhrfqp0gb",
+      "name": "Xavier",
+      "email": "kanuxavier@gmail.com",
+      "bio": "Computational biologist specializing in protein structure analysis",
+      "organization": "NSL",
+      "role": "Senior Research Scientist",
+      "joinDate": "2024-01-15",
+      "avatar": "/uploads/avatars/avatar_cmdqyn00p000001pdhrfqp0gb_1754018282182.png",
+      "plan": "professional",
+      "preferences": {
+        "theme": "light",
+        "language": "en",
+        "notifications": {
+          "email": true,
+          "workflow": true,
+          "collaboration": false,
+          "security": true
+        }
+      },
+      "updatedAt": "2025-08-01T03:18:36.279Z"
+    }
+  }
+}

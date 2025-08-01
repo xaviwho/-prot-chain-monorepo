@@ -1,0 +1,39 @@
+{
+  "name": "protchain-ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@ethersproject/providers": "^5.7.2",
+    "@mui/icons-material": "^5.11.16",
+    "@mui/material": "^5.13.0",
+    "@web3-react/core": "^8.2.3",
+    "@web3-react/injected-connector": "^6.0.7",
+    "3dmol": "^2.5.1",
+    "axios": "^1.8.4",
+    "cuid": "^3.0.0",
+    "ethers": "^5.8.0",
+    "file-saver": "^2.0.5",
+    "js-cookie": "^3.0.5",
+    "next": "15.1.5",
+    "ngl": "^2.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.172.0",
+    "web3": "^4.5.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "eslint": "^9",
+    "eslint-config-next": "15.1.5",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1"
+  }
+}

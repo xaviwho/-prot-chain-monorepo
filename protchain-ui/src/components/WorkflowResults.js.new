@@ -1,0 +1,480 @@
+'use client';
+
+import { useState } from 'react';
+import {
+  Box,
+  Paper,
+  Typography,
+  Tabs,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  LinearProgress,
+  Button,
+} from '@mui/material';
+import { ExpandMore } from '@mui/icons-material';
+import dynamic from 'next/dynamic';
+
+const PDBViewer = dynamic(() => import('./PDBViewer'), { ssr: false });
+const BindingSiteViewer = dynamic(() => import('./BindingSiteViewer'), { ssr: false });
+
+function TabPanel({ children, value, index }) {
+  return (
+    <div hidden={value !== index}>
+      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+    </div>
+  );
+}
+
+export default function WorkflowResults({ results, stage }) {
+  const [activeTab, setActiveTab] = useState(0);
+
+  const renderStructurePreparation = (data) => {
+    console.log('Structure preparation data:', data);
+    
+    // Check all possible locations for the structure data
+    let structureData = null;
+    
+    // Option 1: Direct STRUCTURE_PREPARATION key
+    if (data && data.STRUCTURE_PREPARATION && data.STRUCTURE_PREPARATION.descriptors) {
+      structureData = data.STRUCTURE_PREPARATION;
+    }
+    // Option 2: Nested in message
+    else if (data && data.message && data.message === "Workflow completed successfully" && data.workflow_id) {
+      // Try to use the results.json file we know exists
+      console.log('Using fallback to display structure data');
+      // We'll add a special case to handle this situation
+      return (
+        <Box>
+          <Typography variant="h6" gutterBottom>
+            Structure Analysis
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            Structure preparation completed successfully. Refresh the page to view the results.
+          </Typography>
+          <Button 
+            variant="contained" 
+            color="primary"
+            onClick={() => window.location.reload()}
+          >
+            Refresh Page
+          </Button>
+        </Box>
+      );
+    }
+    
+    if (!structureData) {
+      return (
+        <Box>
+          <Typography variant="body1" color="error">
+            No structure analysis data available
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Data received: {JSON.stringify(data)}
+          </Typography>
+        </Box>
+      );
+    }
+    
+    const { descriptors } = structureData;
+    
+    return (
+      <Box>
+        <Typography variant="h6" gutterBottom>
+          Structure Analysis
+        </Typography>
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Property</TableCell>
+                <TableCell>Value</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell>Chains</TableCell>
+                <TableCell>{descriptors.num_chains}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Residues</TableCell>
+                <TableCell>{descriptors.num_residues}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Atoms</TableCell>
+                <TableCell>{descriptors.num_atoms}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Molecular Weight</TableCell>
+                <TableCell>{descriptors.molecular_weight?.toFixed(2)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Bonds</TableCell>
+                <TableCell>{descriptors.num_bonds}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Rings</TableCell>
+                <TableCell>{descriptors.num_rings}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Rotatable Bonds</TableCell>
+                <TableCell>{descriptors.num_rotatable_bonds}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>H-Bond Acceptors</TableCell>
+                <TableCell>{descriptors.num_h_acceptors}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>H-Bond Donors</TableCell>
+                <TableCell>{descriptors.num_h_donors}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>TPSA</TableCell>
+                <TableCell>{descriptors.tpsa?.toFixed(2)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>LogP</TableCell>
+                <TableCell>{descriptors.logp?.toFixed(2)}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Box>
+    );
+  };
+
+  const renderBindingSites = (data) => (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        Binding Sites
+      </Typography>
+      {data.binding_sites.map((site, index) => (
+        <Accordion key={index}>
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography>
+              Binding Site {index + 1} (Score: {site.score.toFixed(2)})
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <TableContainer>
+              <Table size="small">
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Volume</TableCell>
+                    <TableCell>{site.volume.toFixed(2)} Å³</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Center</TableCell>
+                    <TableCell>
+                      ({site.center.x.toFixed(2)}, {site.center.y.toFixed(2)}, {site.center.z.toFixed(2)})
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Residues</TableCell>
+                    <TableCell>{site.residues.map(r => `${r.name}${r.number}${r.chain}`).join(', ')}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </AccordionDetails>
+        </Accordion>
+      ))}
+    </Box>
+  );
+
+  const renderScreeningResults = (data) => (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        Virtual Screening Results
+      </Typography>
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Compound</TableCell>
+              <TableCell>Score</TableCell>
+              <TableCell>Binding Energy</TableCell>
+              <TableCell>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {data.compounds.map((compound, index) => (
+              <TableRow key={index}>
+                <TableCell>{compound.name}</TableCell>
+                <TableCell>{compound.score.toFixed(2)}</TableCell>
+                <TableCell>{compound.binding_energy.toFixed(2)} kcal/mol</TableCell>
+                <TableCell>
+                  <Button size="small" variant="outlined">View</Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
+  );
+
+  const renderMDResults = (data) => (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        Molecular Dynamics Results
+      </Typography>
+      <Typography variant="subtitle1" gutterBottom>
+        Simulation Summary
+      </Typography>
+      <TableContainer component={Paper} sx={{ mb: 3 }}>
+        <Table size="small">
+          <TableBody>
+            <TableRow>
+              <TableCell>Duration</TableCell>
+              <TableCell>{data.duration} ns</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Temperature</TableCell>
+              <TableCell>{data.temperature} K</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>RMSD</TableCell>
+              <TableCell>{data.rmsd.toFixed(2)} Å</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </TableContainer>
+      
+      {data.trajectories.map((traj, index) => (
+        <Accordion key={index}>
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography>Trajectory {index + 1}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Typography>Trajectory visualization will be available here</Typography>
+          </AccordionDetails>
+        </Accordion>
+      ))}
+    </Box>
+  );
+
+  const renderOptimizationResults = (data) => (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        Lead Optimization Results
+      </Typography>
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Compound</TableCell>
+              <TableCell>Predicted Activity</TableCell>
+              <TableCell>Synthetic Accessibility</TableCell>
+              <TableCell>Drug Likeness</TableCell>
+              <TableCell>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {data.optimized_compounds.map((compound, index) => (
+              <TableRow key={index}>
+                <TableCell>{compound.name}</TableCell>
+                <TableCell>{compound.predicted_activity.toFixed(2)}</TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Box sx={{ width: '100%', mr: 1 }}>
+                      <LinearProgress variant="determinate" value={compound.synthetic_accessibility * 10} />
+                    </Box>
+                    <Box sx={{ minWidth: 35 }}>
+                      <Typography variant="body2">{compound.synthetic_accessibility.toFixed(1)}/10</Typography>
+                    </Box>
+                  </Box>
+                </TableCell>
+                <TableCell>{compound.drug_likeness.toFixed(2)}</TableCell>
+                <TableCell>
+                  <Button size="small" variant="outlined">View</Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
+  );
+
+  const renderStageResults = () => {
+    console.log('Rendering stage results for stage:', stage);
+    console.log('Results:', results);
+    
+    // For structure preparation, we need to handle the specific data format
+    if (stage === 'structure_preparation') {
+      return renderStructurePreparation(results);
+    }
+    
+    // For other stages, use the stage-specific data if available
+    switch (stage) {
+      case 'binding_site_analysis':
+        return results?.binding_site_analysis ? 
+          renderBindingSites(results.binding_site_analysis) : 
+          <Typography>No binding site analysis results available</Typography>;
+      case 'virtual_screening':
+        return results?.virtual_screening ? 
+          renderScreeningResults(results.virtual_screening) : 
+          <Typography>No virtual screening results available</Typography>;
+      case 'molecular_dynamics':
+        return results?.molecular_dynamics ? 
+          renderMDResults(results.molecular_dynamics) : 
+          <Typography>No molecular dynamics results available</Typography>;
+      case 'lead_optimization':
+        return results?.lead_optimization ? 
+          renderOptimizationResults(results.lead_optimization) : 
+          <Typography>No lead optimization results available</Typography>;
+      default:
+        return <Typography>No results available for this stage</Typography>;
+    }
+  };
+
+  return (
+    <Box sx={{ width: '100%' }}>
+      <Paper sx={{ width: '100%', mb: 2 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(e, val) => setActiveTab(val)}
+          variant="fullWidth"
+        >
+          <Tab label="Results" />
+          <Tab label="Visualization" />
+          <Tab label="Analysis" />
+          <Tab label="Binding Sites" />
+        </Tabs>
+        <TabPanel value={activeTab} index={0}>
+          {renderStageResults()}
+        </TabPanel>
+        <TabPanel value={activeTab} index={1}>
+          <Box sx={{ height: 400 }}>
+            {stage === 'structure_preparation' ? (
+              // Check if we have the STRUCTURE_PREPARATION data, which means we have a processed structure
+              results && results.STRUCTURE_PREPARATION ? (
+                // Extract the workflow ID from the URL if available
+                <PDBViewer 
+                  workflowId={window.location.pathname.split('/').pop()} 
+                  style={{ width: '100%', height: '100%' }}
+                />
+              ) : (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                  <Typography variant="body1">
+                    PDB structure visualization will appear here. Please process a structure first.
+                  </Typography>
+                </Box>
+              )
+            ) : (
+              <PDBViewer pdbId={results.pdb_id} />
+            )}
+          </Box>
+        </TabPanel>
+        <TabPanel value={activeTab} index={2}>
+          {stage === 'structure_preparation' && results?.STRUCTURE_PREPARATION?.descriptors ? (
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                Drug-likeness Analysis
+              </Typography>
+              <Typography variant="body1" paragraph>
+                Analysis of the structure based on Lipinski's Rule of Five and other drug-likeness properties:
+              </Typography>
+              
+              <TableContainer component={Paper} sx={{ mb: 3 }}>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Property</TableCell>
+                      <TableCell>Value</TableCell>
+                      <TableCell>Preferred Range</TableCell>
+                      <TableCell>Status</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Molecular Weight</TableCell>
+                      <TableCell>{results.STRUCTURE_PREPARATION.descriptors.molecular_weight?.toFixed(2)}</TableCell>
+                      <TableCell>&lt; 500 Da</TableCell>
+                      <TableCell>
+                        {results.STRUCTURE_PREPARATION.descriptors.molecular_weight < 500 ? 
+                          '✅ Good' : '⚠️ High'}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>LogP</TableCell>
+                      <TableCell>{results.STRUCTURE_PREPARATION.descriptors.logp?.toFixed(2)}</TableCell>
+                      <TableCell>-0.4 to 5.6</TableCell>
+                      <TableCell>
+                        {(results.STRUCTURE_PREPARATION.descriptors.logp > -0.4 && 
+                         results.STRUCTURE_PREPARATION.descriptors.logp < 5.6) ? 
+                          '✅ Good' : '⚠️ Outside optimal range'}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>H-Bond Donors</TableCell>
+                      <TableCell>{results.STRUCTURE_PREPARATION.descriptors.num_h_donors}</TableCell>
+                      <TableCell>&lt; 5</TableCell>
+                      <TableCell>
+                        {results.STRUCTURE_PREPARATION.descriptors.num_h_donors < 5 ? 
+                          '✅ Good' : '⚠️ High'}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>H-Bond Acceptors</TableCell>
+                      <TableCell>{results.STRUCTURE_PREPARATION.descriptors.num_h_acceptors}</TableCell>
+                      <TableCell>&lt; 10</TableCell>
+                      <TableCell>
+                        {results.STRUCTURE_PREPARATION.descriptors.num_h_acceptors < 10 ? 
+                          '✅ Good' : '⚠️ High'}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Rotatable Bonds</TableCell>
+                      <TableCell>{results.STRUCTURE_PREPARATION.descriptors.num_rotatable_bonds}</TableCell>
+                      <TableCell>&lt; 10</TableCell>
+                      <TableCell>
+                        {results.STRUCTURE_PREPARATION.descriptors.num_rotatable_bonds < 10 ? 
+                          '✅ Good' : '⚠️ High'}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>TPSA</TableCell>
+                      <TableCell>{results.STRUCTURE_PREPARATION.descriptors.tpsa?.toFixed(2)}</TableCell>
+                      <TableCell>&lt; 140 Å²</TableCell>
+                      <TableCell>
+                        {results.STRUCTURE_PREPARATION.descriptors.tpsa < 140 ? 
+                          '✅ Good' : '⚠️ High'}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              
+              <Typography variant="body1" sx={{ mt: 2 }}>
+                Note: This is a protein structure, so drug-likeness rules (which are designed for small molecules) 
+                may not apply directly. The analysis is provided for reference purposes.
+              </Typography>
+            </Box>
+          ) : (
+            <Typography>No analysis data available</Typography>
+          )}
+        </TabPanel>
+        <TabPanel value={activeTab} index={3}>
+          {stage === 'structure_preparation' && results?.STRUCTURE_PREPARATION ? (
+            <BindingSiteViewer 
+              workflowId={window.location.pathname.split('/').pop()} 
+              pdbUrl={`/api/workflow/${window.location.pathname.split('/').pop()}/processed-structure`}
+              style={{ width: '100%' }}
+            />
+          ) : (
+            <Typography>Binding site analysis is only available after structure preparation</Typography>
+          )}
+        </TabPanel>
+      </Paper>
+    </Box>
+  );
+}
