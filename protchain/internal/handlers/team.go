@@ -9,7 +9,7 @@ import (
 	"encoding/hex"
 
 	"protchain/internal/dto"
-	"protchain/internal/models"
+
 
 	"github.com/gin-gonic/gin"
 )
