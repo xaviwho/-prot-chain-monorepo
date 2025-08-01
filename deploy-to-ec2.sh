@@ -58,14 +58,14 @@ print_status "Installing additional dependencies..."
 sudo apt install -y git nginx certbot python3-certbot-nginx htop curl wget
 
 # Clone or update repository
-REPO_DIR="/home/$USER/prot-chain"
+REPO_DIR="/home/$USER/prot-chain-monorepo"
 if [ -d "$REPO_DIR" ]; then
     print_status "Updating existing repository..."
     cd $REPO_DIR
-    git pull origin master
+    git pull origin main
 else
     print_status "Cloning repository..."
-    git clone https://github.com/xaviwho/prot-chain.git $REPO_DIR
+    git clone https://github.com/xaviwho/-prot-chain-monorepo.git $REPO_DIR
     cd $REPO_DIR
 fi
 
