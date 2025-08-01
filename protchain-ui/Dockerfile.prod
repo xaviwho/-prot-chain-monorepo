@@ -1,31 +1,4 @@
-# Simple production Dockerfile for ProtChain Frontend
 FROM nginx:alpine
-
-# Copy all frontend files to nginx html directory
 COPY . /usr/share/nginx/html
-
-# Create nginx config file
-RUN cat > /etc/nginx/conf.d/default.conf << 'EOF'
-server {
-    listen 3000;
-    server_name localhost;
-    root /usr/share/nginx/html;
-    index index.html;
-    
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-    
-    location /api/ {
-        proxy_pass http://backend:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-EOF
-
-# Expose port 3000
 EXPOSE 3000
-
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
