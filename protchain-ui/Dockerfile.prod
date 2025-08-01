@@ -4,28 +4,25 @@ FROM nginx:alpine
 # Copy all frontend files to nginx html directory
 COPY . /usr/share/nginx/html
 
-# Create a simple nginx config for SPA
-RUN echo 'server {
+# Create nginx config file
+RUN cat > /etc/nginx/conf.d/default.conf << 'EOF'
+server {
     listen 3000;
     server_name localhost;
     root /usr/share/nginx/html;
     index index.html;
     
-    # Handle client-side routing
     location / {
         try_files $uri $uri/ /index.html;
     }
     
-    # API proxy to backend
     location /api/ {
         proxy_pass http://backend:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
-}' > /etc/nginx/conf.d/default.conf
-
-# Remove default nginx config
-RUN rm -f /etc/nginx/conf.d/default.conf.default
+}
+EOF
 
 # Expose port 3000
 EXPOSE 3000
