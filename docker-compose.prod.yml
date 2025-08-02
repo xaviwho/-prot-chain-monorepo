@@ -117,7 +117,7 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /path/to/persistent/volume  # Update this path
+      device: /data/postgres  # Use this absolute path
 
 networks:
   protchain-network:
