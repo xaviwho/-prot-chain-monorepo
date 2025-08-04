@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { getJWTSecret, getJWTOptions } from '@/lib/jwt-config';
 
 // Simple user database file path
 const userDbPath = path.join(process.cwd(), 'user-db.json');
@@ -21,28 +23,23 @@ function saveUserDb(db) {
   fs.writeFileSync(userDbPath, JSON.stringify(db, null, 2), 'utf8');
 }
 
-// Generate a token
+// Generate a token using standard JWT library
 function generateToken(userData) {
-  const expiryDate = new Date();
-  expiryDate.setDate(expiryDate.getDate() + 7); // 7 days expiry
+  const JWT_SECRET = getJWTSecret();
+  const jwtOptions = getJWTOptions();
   
-  const tokenData = {
+  // Create JWT payload
+  const payload = {
     user_id: userData.id, // Match the Go backend's expected field name
     sub: userData.email,  // Keep sub for standard JWT compliance
     name: userData.name,
-    exp: Math.floor(expiryDate.getTime() / 1000)
+    email: userData.email
   };
   
-  // Convert to base64
-  const tokenStr = Buffer.from(JSON.stringify(tokenData)).toString('base64');
+  // Generate token with consistent configuration
+  const token = jwt.sign(payload, JWT_SECRET, jwtOptions);
   
-  // Create signature
-  const signature = crypto
-    .createHmac('sha256', process.env.JWT_SECRET || 'development-secret-key')
-    .update(tokenStr)
-    .digest('base64');
-  
-  return `${tokenStr}.${signature}`;
+  return token;
 }
 
 export async function POST(request) {

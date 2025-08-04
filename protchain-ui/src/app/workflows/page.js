@@ -69,6 +69,13 @@ export default function WorkflowsPage() {
       });
       
       if (!res.ok) {
+        // Check if it's an authentication error (401)
+        if (res.status === 401) {
+          console.error('Authentication failed - token may be invalid or expired');
+          setError('Authentication error - please log out and log in again');
+          setInvalidToken(true);
+          return;
+        }
         throw new Error('Failed to fetch workflows');
       }
       

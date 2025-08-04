@@ -28,7 +28,8 @@ import {
   Group as GroupIcon,
   AdminPanelSettings as AdminIcon,
   Settings as SettingsIcon,
-  Share as ShareIcon
+  Share as ShareIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -44,6 +45,12 @@ function OrganizationsPageContent() {
     domain: ''
   });
   const [creating, setCreating] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [sharing, setSharing] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -143,6 +150,87 @@ function OrganizationsPageContent() {
       }
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteOrganization = async () => {
+    if (!selectedOrg) return;
+
+    try {
+      setDeleting(true);
+      setError('');
+      
+      const token = localStorage.getItem('token') || document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+      const response = await fetch(`/api/v1/teams/organizations?id=${selectedOrg.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      
+      if (responseData && responseData.success) {
+        // Remove organization from local state
+        setOrganizations(prev => prev.filter(org => org.id !== selectedOrg.id));
+        setDeleteDialogOpen(false);
+        setSelectedOrg(null);
+      } else {
+        throw new Error('Failed to delete organization');
+      }
+    } catch (err) {
+      console.error('Organization deletion error:', err);
+      setError(`Failed to delete organization: ${err.message}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleShareOrganization = async () => {
+    if (!selectedOrg || !shareEmail.trim()) return;
+
+    try {
+      setSharing(true);
+      setError('');
+      
+      const token = localStorage.getItem('token') || document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+      const response = await fetch(`/api/v1/teams/organizations/${selectedOrg.id}/invite`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: shareEmail.trim(),
+          role: 'member'
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      
+      if (responseData && responseData.success) {
+        setShareDialogOpen(false);
+        setSelectedOrg(null);
+        setShareEmail('');
+        // Show success message
+        setError(''); // Clear any previous errors
+      } else {
+        throw new Error('Failed to send invitation');
+      }
+    } catch (err) {
+      console.error('Organization sharing error:', err);
+      setError(`Failed to share organization: ${err.message}`);
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -256,6 +344,30 @@ function OrganizationsPageContent() {
                           <SettingsIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="Delete Organization">
+                        <IconButton 
+                          size="small" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedOrg(org);
+                            setDeleteDialogOpen(true);
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Share Organization">
+                        <IconButton 
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedOrg(org);
+                            setShareDialogOpen(true);
+                          }}
+                        >
+                          <ShareIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </Box>
                   </Box>
 
@@ -301,17 +413,6 @@ function OrganizationsPageContent() {
                         </Typography>
                       </Box>
                     </Box>
-                    <Tooltip title="Share Organization">
-                      <IconButton 
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // TODO: Implement share functionality
-                        }}
-                      >
-                        <ShareIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
                   </Box>
                 </CardContent>
               </Card>
@@ -371,6 +472,70 @@ function OrganizationsPageContent() {
             sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
           >
             {creating ? <CircularProgress size={20} /> : 'Create Organization'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Organization Dialog */}
+      <Dialog 
+        open={deleteDialogOpen} 
+        onClose={() => setDeleteDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete Organization</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            Are you sure you want to delete the organization "{selectedOrg?.name}"?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDeleteOrganization}
+            variant="contained"
+            disabled={deleting}
+            sx={{ bgcolor: '#e53935', '&:hover': { bgcolor: '#c62828' } }}
+          >
+            {deleting ? <CircularProgress size={20} /> : 'Delete Organization'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Share Organization Dialog */}
+      <Dialog 
+        open={shareDialogOpen} 
+        onClose={() => setShareDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Share Organization</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 1 }}>
+            <TextField
+              fullWidth
+              label="Email Address"
+              value={shareEmail}
+              onChange={(e) => setShareEmail(e.target.value)}
+              margin="normal"
+              required
+              placeholder="e.g., user@example.com"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShareDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleShareOrganization}
+            variant="contained"
+            disabled={sharing || !shareEmail.trim()}
+            sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+          >
+            {sharing ? <CircularProgress size={20} /> : 'Share Organization'}
           </Button>
         </DialogActions>
       </Dialog>
