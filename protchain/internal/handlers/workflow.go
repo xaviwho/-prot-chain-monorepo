@@ -27,7 +27,7 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 		SELECT id, name, description, status, results, blockchain_tx_hash, ipfs_hash, 
 		       blockchain_committed_at, created_at, updated_at
 		FROM workflows 
-		WHERE user_id = ? 
+		WHERE user_id = $1 
 		ORDER BY created_at DESC
 	`, userID)
 
@@ -40,7 +40,8 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var workflows []dto.WorkflowResponse
+	// Initialize as non-nil to ensure JSON encodes [] instead of null when empty
+	workflows := make([]dto.WorkflowResponse, 0)
 	for rows.Next() {
 		var w models.Workflow
 		err := rows.Scan(&w.ID, &w.Name, &w.Description, &w.Status, &w.Results,
@@ -82,10 +83,12 @@ func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
 		return
 	}
 
-	result, err := h.db.Exec(`
+	var workflowID int
+	err := h.db.QueryRow(`
 		INSERT INTO workflows (user_id, name, description, status, created_at, updated_at)
-		VALUES (?, ?, ?, 'draft', ?, ?)
-	`, userID, req.Name, req.Description, time.Now(), time.Now())
+		VALUES ($1, $2, $3, 'draft', $4, $5)
+		RETURNING id
+	`, userID, req.Name, req.Description, time.Now(), time.Now()).Scan(&workflowID)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
@@ -95,17 +98,16 @@ func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
 		return
 	}
 
-	workflowID, _ := result.LastInsertId()
-
+	now := time.Now()
 	c.JSON(http.StatusCreated, dto.SuccessResponse{
 		Success: true,
 		Data: dto.WorkflowResponse{
-			ID:          int(workflowID),
+			ID:          workflowID,
 			Name:        req.Name,
 			Description: req.Description,
 			Status:      "draft",
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		},
 	})
 }
@@ -119,7 +121,7 @@ func (h *WorkflowHandler) GetWorkflow(c *gin.Context) {
 		SELECT id, name, description, status, results, blockchain_tx_hash, ipfs_hash,
 		       blockchain_committed_at, created_at, updated_at
 		FROM workflows 
-		WHERE id = ? AND user_id = ?
+		WHERE id = $1 AND user_id = $2
 	`, workflowID, userID).Scan(&w.ID, &w.Name, &w.Description, &w.Status, &w.Results,
 		&w.BlockchainTxHash, &w.IPFSHash, &w.BlockchainCommittedAt,
 		&w.CreatedAt, &w.UpdatedAt)
@@ -172,8 +174,8 @@ func (h *WorkflowHandler) UpdateWorkflow(c *gin.Context) {
 
 	_, err := h.db.Exec(`
 		UPDATE workflows 
-		SET name = ?, description = ?, status = ?, results = ?, updated_at = ?
-		WHERE id = ? AND user_id = ?
+		SET name = $1, description = $2, status = $3, results = $4, updated_at = $5
+		WHERE id = $6 AND user_id = $7
 	`, req.Name, req.Description, req.Status, req.Results, time.Now(), workflowID, userID)
 
 	if err != nil {
@@ -206,8 +208,8 @@ func (h *WorkflowHandler) UpdateWorkflowBlockchainInfo(c *gin.Context) {
 	now := time.Now()
 	_, err := h.db.Exec(`
 		UPDATE workflows 
-		SET blockchain_tx_hash = ?, ipfs_hash = ?, blockchain_committed_at = ?, updated_at = ?
-		WHERE id = ? AND user_id = ?
+		SET blockchain_tx_hash = $1, ipfs_hash = $2, blockchain_committed_at = $3, updated_at = $4
+		WHERE id = $5 AND user_id = $6
 	`, req.BlockchainTxHash, req.IPFSHash, now, now, workflowID, userID)
 
 	if err != nil {
@@ -228,30 +230,41 @@ func (h *WorkflowHandler) DeleteWorkflow(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	workflowID := c.Param("id")
 
-	result, err := h.db.Exec(`
-		DELETE FROM workflows 
-		WHERE id = ? AND user_id = ?
-	`, workflowID, userID)
-
+	tx, err := h.db.Begin()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Success: false,
-			Error:   "Failed to delete workflow",
-		})
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to start transaction"})
+		return
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	// Delete dependent permissions first to avoid FK constraint errors
+	if _, err := tx.Exec(`DELETE FROM workflow_permissions WHERE workflow_id = $1`, workflowID); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to delete workflow permissions"})
+		return
+	}
+
+	// Then delete the workflow row
+	result, err := tx.Exec(`
+		DELETE FROM workflows 
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to delete workflow"})
 		return
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, dto.ErrorResponse{
-			Success: false,
-			Error:   "Workflow not found",
-		})
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{Success: false, Error: "Workflow not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.SuccessResponse{
-		Success: true,
-		Message: "Workflow deleted successfully",
-	})
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to commit transaction"})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.SuccessResponse{Success: true, Message: "Workflow deleted successfully"})
 }

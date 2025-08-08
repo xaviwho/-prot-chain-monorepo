@@ -3,13 +3,16 @@ const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
     return [
+      // This rule ensures that requests to our local API route are handled by Next.js
+      // and not proxied to the backend. It effectively does nothing, letting the request fall through.
+      {
+        source: '/api/v1/protein/:path*',
+        destination: '/api/v1/protein/:path*',
+      },
+      // This is the general proxy rule for all other /api/v1 calls.
       {
         source: '/api/v1/:path*',
         destination: 'http://localhost:8082/api/v1/:path*',
-      },
-      {
-        source: '/auth/:path*',
-        destination: 'http://localhost:8082/auth/:path*',
       },
     ]
   },
@@ -61,4 +64,5 @@ const nextConfig = {
   },
 }
 
+// Triggering a server restart to resolve API route resolution issues.
 module.exports = nextConfig

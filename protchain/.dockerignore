@@ -1,0 +1,23 @@
+# Git
+.git
+.gitignore
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+
+# Local environment files
+.env
+.env.*
+
+# IDE files
+.idea
+.vscode
+
+# OS generated files
+.DS_Store
+Thumbs.db

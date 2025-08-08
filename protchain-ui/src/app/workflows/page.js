@@ -66,6 +66,7 @@ export default function WorkflowsPage() {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
+        cache: 'no-store',
       });
       
       if (!res.ok) {
@@ -93,31 +94,33 @@ export default function WorkflowsPage() {
         throw new Error('Invalid response format from server');
       }
       
-      // Check if data has the expected structure
-      if (data && typeof data === 'object') {
-        // Handle different response formats
-        if (Array.isArray(data)) {
-          // If the API returns an array directly
-          setWorkflows(data);
-        } else if (data.payload && Array.isArray(data.payload)) {
-          // If the API returns {payload: [...workflows]}
-          setWorkflows(data.payload);
-        } else if (data.data && Array.isArray(data.data)) {
-          // If the API returns {data: [...workflows]}
-          setWorkflows(data.data);
-        } else if (data.workflows && Array.isArray(data.workflows)) {
-          // If the API returns {workflows: [...workflows]}
-          setWorkflows(data.workflows);
-        } else {
-          // If we can't find workflows in any expected location
-          console.error('Unexpected response structure:', data);
-          setWorkflows([]);
-          setError('No workflows data found in server response');
-        }
-      } else {
-        console.error('Invalid response data:', data);
-        setWorkflows([]);
-        setError('Invalid response format from server');
+      let workflowData = [];
+      if (Array.isArray(data)) {
+        workflowData = data;
+      } else if (data && Array.isArray(data.data)) {
+        workflowData = data.data;
+      } else if (data && data.success === true && data.data === null) {
+        // Backend returned { success: true, data: null } – treat as empty list
+        workflowData = [];
+      } else if (data && data.success === true && data.data && !Array.isArray(data.data)) {
+        // Single object returned in data; normalize to list
+        workflowData = [data.data];
+      } else if (data && Array.isArray(data.payload)) {
+        workflowData = data.payload;
+      } else if (data && Array.isArray(data.workflows)) {
+        workflowData = data.workflows;
+      } else if (data && data.success === true && (data.workflows === null || data.payload === null)) {
+        workflowData = [];
+      } else if (data) {
+        console.warn('Unexpected response structure, but received an object:', data);
+        // Keep workflows as-is but show a soft error only if no list derived
+        setError('Received an unexpected data format from the server.');
+      }
+
+      setWorkflows(workflowData);
+      if (workflowData) {
+        // Clear any previous error on successful parse
+        setError(null);
       }
     } catch (err) {
       console.error('Error fetching workflows:', err);
@@ -155,13 +158,45 @@ export default function WorkflowsPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || 'Failed to create workflow');
+        let detail = 'Failed to create workflow';
+        try {
+          const data = await res.json();
+          detail = data?.error || data?.message || detail;
+        } catch (_) {
+          try {
+            const text = await res.text();
+            if (text) detail = `${detail} (status ${res.status}): ${text}`;
+          } catch (_) {}
+        }
+        throw new Error(detail);
+      }
+
+      // Parse created workflow and optimistically add to list
+      let created;
+      try {
+        created = await res.json();
+      } catch (_) {
+        created = null;
+      }
+
+      // Normalize: backend may return object directly or {success, data}
+      let createdWorkflow = null;
+      if (created && created.success === true && created.data) {
+        createdWorkflow = created.data;
+      } else if (created && !created.success && created.data) {
+        createdWorkflow = created.data;
+      } else if (created && created.id) {
+        createdWorkflow = created;
+      }
+
+      if (createdWorkflow) {
+        setWorkflows((prev) => [createdWorkflow, ...prev]);
       }
 
       setShowNewWorkflowDialog(false);
       setNewWorkflowName('');
-      fetchWorkflows(); // Refresh the list
+      // Also refresh from server to stay in sync
+      fetchWorkflows();
     } catch (err) {
       console.error('Error creating workflow:', err);
       setError(err.message);
@@ -191,8 +226,17 @@ export default function WorkflowsPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || 'Failed to delete workflow');
+        let detail = 'Failed to delete workflow';
+        try {
+          const data = await res.json();
+          detail = data?.error || data?.message || detail;
+        } catch (_) {
+          try {
+            const text = await res.text();
+            if (text) detail = `${detail} (status ${res.status}): ${text}`;
+          } catch (_) {}
+        }
+        throw new Error(detail);
       }
 
       setWorkflows(workflows.filter((w) => w.id !== workflowToDelete.id));

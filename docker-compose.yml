@@ -15,8 +15,8 @@ services:
   protchainapi:
     build:
       context: ./protchain
-      dockerfile: Dockerfile
-    container_name: protchain-api
+      dockerfile: Dockerfile.prod
+    container_name: protchainapi
     env_file:
       - ./protchain/.env
     ports:
@@ -28,7 +28,7 @@ services:
   bioapi:
     build:
       context: ./bioapi
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.prod
     ports:
       - "8000:8000"
     volumes:

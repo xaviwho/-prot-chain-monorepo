@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 )
 
 func Initialize(databaseURL string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", databaseURL)
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -27,123 +27,105 @@ func RunMigrations(db *sql.DB) error {
 	migrations := []string{
 		// Users table
 		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id SERIAL PRIMARY KEY,
 			email TEXT UNIQUE NOT NULL,
 			password_hash TEXT NOT NULL,
 			first_name TEXT,
 			last_name TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Organizations table
+		`CREATE TABLE IF NOT EXISTS organizations (
+			id SERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			domain TEXT,
+			plan TEXT DEFAULT 'free',
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Teams table
+		`CREATE TABLE IF NOT EXISTS teams (
+			id SERIAL PRIMARY KEY,
+			organization_id INTEGER NOT NULL REFERENCES organizations(id),
+			name TEXT NOT NULL,
+			description TEXT,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
 
 		// Workflows table with blockchain fields
 		`CREATE TABLE IF NOT EXISTS workflows (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES users(id),
 			name TEXT NOT NULL,
 			description TEXT,
 			status TEXT DEFAULT 'draft',
 			results TEXT,
 			blockchain_tx_hash TEXT,
 			ipfs_hash TEXT,
-			blockchain_committed_at DATETIME,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users (id)
-		)`,
-
-		// Organizations table
-		`CREATE TABLE IF NOT EXISTS organizations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
-			description TEXT,
-			domain TEXT,
-			plan TEXT DEFAULT 'free',
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			blockchain_committed_at TIMESTAMP WITH TIME ZONE,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
 
 		// Organization members table
 		`CREATE TABLE IF NOT EXISTS organization_members (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			organization_id INTEGER NOT NULL,
-			user_id INTEGER NOT NULL,
+			id SERIAL PRIMARY KEY,
+			organization_id INTEGER NOT NULL REFERENCES organizations(id),
+			user_id INTEGER NOT NULL REFERENCES users(id),
 			role TEXT DEFAULT 'member',
-			joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (organization_id) REFERENCES organizations (id),
-			FOREIGN KEY (user_id) REFERENCES users (id),
+			joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(organization_id, user_id)
-		)`,
-
-		// Teams table
-		`CREATE TABLE IF NOT EXISTS teams (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			organization_id INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			description TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (organization_id) REFERENCES organizations (id)
 		)`,
 
 		// Team members table
 		`CREATE TABLE IF NOT EXISTS team_members (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			team_id INTEGER NOT NULL,
-			user_id INTEGER NOT NULL,
+			id SERIAL PRIMARY KEY,
+			team_id INTEGER NOT NULL REFERENCES teams(id),
+			user_id INTEGER NOT NULL REFERENCES users(id),
 			role TEXT DEFAULT 'member',
-			joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (team_id) REFERENCES teams (id),
-			FOREIGN KEY (user_id) REFERENCES users (id),
+			joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(team_id, user_id)
 		)`,
 
 		// Invitations table
 		`CREATE TABLE IF NOT EXISTS invitations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			organization_id INTEGER,
-			team_id INTEGER,
+			id SERIAL PRIMARY KEY,
+			organization_id INTEGER REFERENCES organizations(id),
+			team_id INTEGER REFERENCES teams(id),
 			email TEXT NOT NULL,
 			role TEXT DEFAULT 'member',
 			token TEXT UNIQUE NOT NULL,
-			invited_by INTEGER NOT NULL,
+			invited_by INTEGER NOT NULL REFERENCES users(id),
 			status TEXT DEFAULT 'pending',
-			expires_at DATETIME NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (organization_id) REFERENCES organizations (id),
-			FOREIGN KEY (team_id) REFERENCES teams (id),
-			FOREIGN KEY (invited_by) REFERENCES users (id)
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
 
 		// Workflow permissions table
 		`CREATE TABLE IF NOT EXISTS workflow_permissions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workflow_id INTEGER NOT NULL,
-			organization_id INTEGER,
-			team_id INTEGER,
-			user_id INTEGER,
+			id SERIAL PRIMARY KEY,
+			workflow_id INTEGER NOT NULL REFERENCES workflows(id),
+			organization_id INTEGER REFERENCES organizations(id),
+			team_id INTEGER REFERENCES teams(id),
+			user_id INTEGER REFERENCES users(id),
 			permission_level TEXT DEFAULT 'view',
-			granted_by INTEGER NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workflow_id) REFERENCES workflows (id),
-			FOREIGN KEY (organization_id) REFERENCES organizations (id),
-			FOREIGN KEY (team_id) REFERENCES teams (id),
-			FOREIGN KEY (user_id) REFERENCES users (id),
-			FOREIGN KEY (granted_by) REFERENCES users (id)
+			granted_by INTEGER NOT NULL REFERENCES users(id)
 		)`,
 
 		// Activity log table
 		`CREATE TABLE IF NOT EXISTS activity_log (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			organization_id INTEGER,
-			team_id INTEGER,
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			organization_id INTEGER REFERENCES organizations(id),
+			team_id INTEGER REFERENCES teams(id),
 			action TEXT NOT NULL,
 			details TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users (id),
-			FOREIGN KEY (organization_id) REFERENCES organizations (id),
-			FOREIGN KEY (team_id) REFERENCES teams (id)
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
 
 		// Indexes for performance

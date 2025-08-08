@@ -108,7 +108,7 @@ func main() {
 			}
 
 			// Teams within organizations
-			orgTeams := teams.Group("/organizations/:orgId/teams")
+			orgTeams := teams.Group("/organizations/:id/teams")
 			{
 				orgTeams.GET("", teamHandler.ListTeams)
 				orgTeams.POST("", teamHandler.CreateTeam)

@@ -131,7 +131,7 @@ export default function ProteinScreen() {
             setBlockchainInfo({
                 fileHash: blockchain_info?.file_hash || '',
                 ipfsCid: blockchain_info?.ipfs_cid || '',
-                primaryAccession: proteinData.primary_accession
+                primaryAccession: proteinData?.primary_accession || 'N/A'
             });
 
             const pdbBlob = new Blob([response.file], { type: 'chemical/x-pdb' });
@@ -272,15 +272,15 @@ export default function ProteinScreen() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                 <div>
                                     <p style={{ color: '#4B5563', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem' }}>Recommended Name</p>
-                                    <p style={{ color: '#111827', fontSize: '0.938rem' }}>{metadata.recommended_name || 'N/A'}</p>
+                                    <p style={{ color: '#111827', fontSize: '0.938rem' }}>{metadata?.recommended_name || 'N/A'}</p>
                                 </div>
                                 <div>
                                     <p style={{ color: '#4B5563', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem' }}>Organism</p>
-                                    <p style={{ color: '#111827', fontSize: '0.938rem' }}>{metadata.organism.scientific_name || 'Unknown'} ({metadata.organism.common_name || 'Unknown'})</p>
+                                    <p style={{ color: '#111827', fontSize: '0.938rem' }}>{metadata?.organism?.scientific_name || 'Unknown'} ({metadata?.organism?.common_name || 'Unknown'})</p>
                                 </div>
                                 <div>
                                     <p style={{ color: '#4B5563', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.25rem' }}>First Public Date</p>
-                                    <p style={{ color: '#111827', fontSize: '0.938rem' }}>{metadata.entry_audit.first_public_date || 'N/A'}</p>
+                                    <p style={{ color: '#111827', fontSize: '0.938rem' }}>{metadata?.entry_audit?.first_public_date || 'N/A'}</p>
                                 </div>
                             </div>
                         </div>

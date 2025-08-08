@@ -40,85 +40,85 @@ apiClient.interceptors.request.use((config) => {
 
 export const authenticateUser = async (email, password) => {
     try {
-        // Call the backend API directly
-        const response = await fetch('/auth/login', {
+        const response = await fetch('/api/v1/auth/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ email, password })
         });
-        
+        const body = await response.json().catch(() => ({}));
+
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Authentication failed');
+            // Backend uses { success:false, error:"..." }
+            const message = body?.error || body?.message || 'Authentication failed';
+            throw new Error(message);
         }
-        
-        const data = await response.json();
-        
-        if (data.payload?.token) {
-            // Validate token format before storing
-            if (!isValidJWT(data.payload.token)) {
+
+        const token = body?.data?.token;
+        if (token) {
+            if (!isValidJWT(token)) {
                 console.error('Invalid JWT format received from server');
                 throw new Error('Invalid token format received from server');
             }
-            
-            // Store token in both localStorage and cookies for compatibility
-            localStorage.setItem('token', data.payload.token);
-            Cookies.set('token', data.payload.token, { 
-                expires: 7, // 7 days
+            localStorage.setItem('token', token);
+            Cookies.set('token', token, {
+                expires: 7,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Lax'
             });
-            // Trigger storage event for Navigation component
             window.dispatchEvent(new Event('storage'));
         }
-        return data;
+        return body;
     } catch (error) {
-        console.error("Login error:", error);
-        throw error; // Pass through the actual error message
+        console.error('Login error:', error);
+        throw error;
     }
 };
 
 export const registerUser = async (name, email, password) => {
     try {
-        // Call the backend API directly
-        const response = await fetch('/auth/register', {
+        // Split full name into first/last per backend expectations
+        let first_name = name?.trim() || '';
+        let last_name = '';
+        if (first_name.includes(' ')) {
+            const parts = first_name.split(/\s+/);
+            first_name = parts.shift();
+            last_name = parts.join(' ');
+        }
+
+        const response = await fetch('/api/v1/auth/register', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ name, email, password })
+            body: JSON.stringify({ email, password, first_name, last_name })
         });
-        
+        const body = await response.json().catch(() => ({}));
+
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Registration failed');
+            const message = body?.error || body?.message || 'Registration failed';
+            throw new Error(message);
         }
-        
-        const data = await response.json();
-        
-        if (data.payload?.token) {
-            // Validate token format before storing
-            if (!isValidJWT(data.payload.token)) {
+
+        const token = body?.data?.token;
+        if (token) {
+            if (!isValidJWT(token)) {
                 console.error('Invalid JWT format received from server');
                 throw new Error('Invalid token format received from server');
             }
-            
-            // Store token in both localStorage and cookies for compatibility
-            localStorage.setItem('token', data.payload.token);
-            Cookies.set('token', data.payload.token, { 
-                expires: 7, // 7 days
+            localStorage.setItem('token', token);
+            Cookies.set('token', token, {
+                expires: 7,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Lax'
             });
-            // Trigger storage event for Navigation component
             window.dispatchEvent(new Event('storage'));
         }
-        return data;
+        return body;
     } catch (error) {
-        console.error("Registration error:", error);
-        throw error; // Pass through the actual error message
+        console.error('Registration error:', error);
+        throw error;
     }
 };
 
@@ -133,40 +133,42 @@ export const logoutUser = () => {
 
 export const retrieveProteinDetail = async (proteinId) => {
     try {
-        // Send request to retrieve protein details
         console.log('Fetching protein:', proteinId);
-        const response = await apiClient.get(
-            `/api/v1/protein/${proteinId}`,
-            {
-                headers: { Accept: 'application/json' },
-            }
-        );
+        const token = getValidToken();
+        const res = await fetch(`/api/v1/protein/${encodeURIComponent(proteinId)}`, {
+            headers: {
+                Accept: 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            cache: 'no-store',
+        });
 
-        const { data: responseData } = response;
+        const text = await res.text();
+        if (!res.ok) {
+            let detail = 'Failed to retrieve protein';
+            try { const j = JSON.parse(text); detail = j?.error || j?.message || detail; } catch (_) {}
+            throw new Error(detail);
+        }
+        let responseData;
+        try { responseData = text ? JSON.parse(text) : null; } catch (_) { throw new Error('Invalid API response format'); }
         console.log('API Response:', responseData);
-        
+
         if (!responseData || !responseData.data || !responseData.file) {
             throw new Error('Invalid API response format');
         }
 
-        // Create a blob from the PDB file content
         const fileBlob = new Blob([responseData.file], { type: 'chemical/x-pdb' });
-
-        // Return both metadata and the file blob
         return {
             metadata: {
                 protein_id: responseData.protein_id,
                 data: responseData.data,
-                blockchain_info: responseData.blockchain_info || {
-                    ipfs_cid: '',
-                    file_hash: ''
-                }
+                blockchain_info: responseData.blockchain_info || { ipfs_cid: '', file_hash: '' },
             },
-            file: fileBlob
+            file: fileBlob,
         };
     } catch (error) {
         console.error('Error in retrieveProteinDetail:', error);
-        const errorMessage = error.response?.data?.detail || error.message || 'Network Error';
+        const errorMessage = error.message || 'Network Error';
         throw new Error(errorMessage);
     }
 };

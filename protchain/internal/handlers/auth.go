@@ -37,7 +37,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	// Check if user already exists
 	var existingID int
-	err := h.db.QueryRow("SELECT id FROM users WHERE email = ?", req.Email).Scan(&existingID)
+		err := h.db.QueryRow("SELECT id FROM users WHERE email = $1", req.Email).Scan(&existingID)
 	if err != sql.ErrNoRows {
 		c.JSON(http.StatusConflict, dto.ErrorResponse{
 			Success: false,
@@ -59,7 +59,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	// Create user
 	result, err := h.db.Exec(`
 		INSERT INTO users (email, password_hash, first_name, last_name, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`, req.Email, string(hashedPassword), req.FirstName, req.LastName, time.Now(), time.Now())
 
 	if err != nil {
@@ -110,7 +110,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var user models.User
 	err := h.db.QueryRow(`
 		SELECT id, email, password_hash, first_name, last_name
-		FROM users WHERE email = ?
+		FROM users WHERE email = $1
 	`, req.Email).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName)
 
 	if err == sql.ErrNoRows {
