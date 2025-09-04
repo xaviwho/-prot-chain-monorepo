@@ -21,6 +21,7 @@ export const apiClient = axios.create({
 // Export URLs for use in components
 export const getIpfsApiUrl = () => IPFS_API_URL;
 export const getIpfsGatewayUrl = () => IPFS_GATEWAY_URL;
+export const getApiBaseUrl = () => API_URL;
 
 apiClient.interceptors.request.use((config) => {
     // Use our utility function to get a valid token

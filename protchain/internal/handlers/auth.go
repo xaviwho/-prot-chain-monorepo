@@ -56,11 +56,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Create user
-	result, err := h.db.Exec(`
+	// Create user and return the new user's ID
+	var userID int
+	err = h.db.QueryRow(`
 		INSERT INTO users (email, password_hash, first_name, last_name, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, req.Email, string(hashedPassword), req.FirstName, req.LastName, time.Now(), time.Now())
+		RETURNING id
+	`, req.Email, string(hashedPassword), req.FirstName, req.LastName, time.Now(), time.Now()).Scan(&userID)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
@@ -69,8 +71,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		})
 		return
 	}
-
-	userID, _ := result.LastInsertId()
 
 	// Generate JWT token
 	token, err := h.generateToken(int(userID), req.Email)

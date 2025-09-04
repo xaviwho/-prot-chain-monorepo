@@ -89,6 +89,13 @@ export async function POST(request) {
       }, { status: 401 });
     }
     
+    // Ensure user has an ID (for backward compatibility with existing users)
+    if (!user.id) {
+      // For existing users without IDs, assign one based on email hash
+      const crypto = require('crypto');
+      user.id = crypto.createHash('md5').update(email).digest('hex');
+    }
+    
     // Generate token
     const token = generateToken(user);
     
@@ -99,6 +106,7 @@ export async function POST(request) {
       payload: {
         token,
         user: {
+          id: user.id,
           name: user.name,
           email: user.email
         }

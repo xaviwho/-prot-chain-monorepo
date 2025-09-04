@@ -24,7 +24,7 @@ docker-compose down --remove-orphans
 
 # Start all services
 echo "🔄 Starting all services..."
-docker-compose up -d
+docker-compose up -d --build
 
 # Wait a moment for services to initialize
 echo "⏳ Waiting for services to initialize..."

@@ -9,6 +9,7 @@ import (
 )
 
 func Initialize(databaseURL string) (*sql.DB, error) {
+	fmt.Printf("Initializing database with URL: %s", databaseURL)
 	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -61,6 +62,7 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS workflows (
 			id SERIAL PRIMARY KEY,
 			user_id INTEGER NOT NULL REFERENCES users(id),
+			team_id INTEGER,
 			name TEXT NOT NULL,
 			description TEXT,
 			status TEXT DEFAULT 'draft',
@@ -139,6 +141,9 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_workflow_permissions_workflow_id ON workflow_permissions (workflow_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_activity_log_org_id ON activity_log (organization_id)`,
+
+		// Add team id to workflows if it does not already exist
+		`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS team_id INTEGER`,
 	}
 
 	for i, migration := range migrations {

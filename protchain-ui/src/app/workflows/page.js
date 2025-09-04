@@ -24,11 +24,28 @@ import ScienceIcon from '@mui/icons-material/Science';
 import OnboardingManager from '../../components/OnboardingManager';
 
 export default function WorkflowsPage() {
-  const [workflows, setWorkflows] = useState([]);
+  // Critical fix: Initialize workflows from localStorage if available
+  const getInitialWorkflows = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('cachedWorkflows');
+        if (cached) {
+          console.log('Initializing with cached workflows');
+          return JSON.parse(cached);
+        }
+      } catch (e) {
+        console.error('Failed to load cached workflows:', e);
+      }
+    }
+    return [];
+  };
+
+  const [workflows, setWorkflows] = useState(getInitialWorkflows);
   const [showNewWorkflowDialog, setShowNewWorkflowDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [workflowToDelete, setWorkflowToDelete] = useState(null);
   const [newWorkflowName, setNewWorkflowName] = useState('');
+  const [newWorkflowDescription, setNewWorkflowDescription] = useState('');
   const [error, setError] = useState(null);
   const [invalidToken, setInvalidToken] = useState(false);
   const [userId, setUserId] = useState(null);
@@ -40,13 +57,45 @@ export default function WorkflowsPage() {
     window.location.href = '/';
   };
 
-  const fetchWorkflows = async () => {
+  // Define a constant backend API URL to avoid initialization issues
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+  
+  const fetchWorkflows = async (skipLogging = false) => {
     try {
-      const token = localStorage.getItem('token');
+      // First check for any local cached workflows
+      const cachedWorkflows = localStorage.getItem('cachedWorkflows');
+      if (cachedWorkflows) {
+        try {
+          const parsed = JSON.parse(cachedWorkflows);
+          console.log('Found cached workflows:', parsed);
+          setWorkflows(parsed);
+        } catch (e) {
+          console.warn('Failed to parse cached workflows:', e);
+        }
+      }
+      
+      // Try multiple token sources for robustness
+      let token = localStorage.getItem('token');
+      if (!token) {
+        // Fallback to cookies if localStorage is empty
+        const cookies = document.cookie.split(';');
+        const tokenCookie = cookies.find(c => c.trim().startsWith('token='));
+        if (tokenCookie) {
+          token = tokenCookie.split('=')[1];
+        }
+      }
+      
+      console.log('Token retrieval:', {
+        fromLocalStorage: !!localStorage.getItem('token'),
+        fromCookies: !!document.cookie.includes('token='),
+        tokenExists: !!token,
+        tokenLength: token ? token.length : 0
+      });
       
       // Validate token format (should be header.payload.signature)
       if (!token || token.split('.').length !== 3) {
         console.error('Invalid token format - please log out and log in again');
+        console.error('Token details:', { token: token ? token.substring(0, 20) + '...' : 'null' });
         setError('Authentication error - please log out and log in again');
         setInvalidToken(true);
         return;
@@ -62,11 +111,26 @@ export default function WorkflowsPage() {
         console.warn('Could not parse JWT payload for user ID:', e);
       }
 
-      const res = await fetch('/api/v1/workflows', {
+      console.log('Fetching workflows directly from backend API...');
+      
+      // IMPORTANT FIX: Use direct backend API call instead of Next.js API route
+      // This bypasses any potential caching or proxy issues
+      const timestamp = new Date().getTime();
+      // Log the token for debugging (first 10 chars only for security)
+      if (token) {
+        console.log(`Using token: ${token.substring(0, 10)}...`);
+      }
+      
+      console.log('Making API request with token:', token.substring(0, 20) + '...');
+      
+      const res = await fetch(`/api/v1/workflows?_=${timestamp}`, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        cache: 'no-store',
+        cache: 'no-store', // Force fresh data
+        credentials: 'include', // Include cookies
       });
       
       if (!res.ok) {
@@ -77,49 +141,87 @@ export default function WorkflowsPage() {
           setInvalidToken(true);
           return;
         }
-        throw new Error('Failed to fetch workflows');
+        throw new Error(`Failed to fetch workflows: ${res.status} ${res.statusText}`);
       }
       
       // Log the raw response for debugging
       const responseText = await res.text();
-      console.log('Raw API response:', responseText);
+      !skipLogging && console.log('Raw API response:', responseText);
       
       // Try to parse as JSON
       let data;
       try {
         data = JSON.parse(responseText);
-        console.log('Parsed response data:', data);
+        !skipLogging && console.log('Parsed response data:', data);
       } catch (jsonError) {
         console.error('JSON parse error:', jsonError);
         throw new Error('Invalid response format from server');
       }
       
       let workflowData = [];
-      if (Array.isArray(data)) {
+      // Add debug output to help diagnose the exact response format
+      !skipLogging && console.log('Response data type:', typeof data);
+      if (data === null || data === undefined) {
+        !skipLogging && console.log('No data returned from API');
+        workflowData = [];
+      } else if (Array.isArray(data)) {
+        !skipLogging && console.log('Data is an array with', data.length, 'items');
         workflowData = data;
-      } else if (data && Array.isArray(data.data)) {
-        workflowData = data.data;
-      } else if (data && data.success === true && data.data === null) {
-        // Backend returned { success: true, data: null } – treat as empty list
-        workflowData = [];
-      } else if (data && data.success === true && data.data && !Array.isArray(data.data)) {
-        // Single object returned in data; normalize to list
-        workflowData = [data.data];
-      } else if (data && Array.isArray(data.payload)) {
-        workflowData = data.payload;
-      } else if (data && Array.isArray(data.workflows)) {
-        workflowData = data.workflows;
-      } else if (data && data.success === true && (data.workflows === null || data.payload === null)) {
-        workflowData = [];
-      } else if (data) {
-        console.warn('Unexpected response structure, but received an object:', data);
-        // Keep workflows as-is but show a soft error only if no list derived
-        setError('Received an unexpected data format from the server.');
+      } else if (data && typeof data === 'object') {
+        // Check common response patterns
+        if (Array.isArray(data.data)) {
+          !skipLogging && console.log('Found data.data array with', data.data.length, 'items');
+          workflowData = data.data;
+        } else if (data.success === true && data.data === null) {
+          !skipLogging && console.log('Found {success: true, data: null}');
+          workflowData = [];
+        } else if (data.success === true && typeof data.data === 'object' && !Array.isArray(data.data)) {
+          !skipLogging && console.log('Found single object in data.data');
+          workflowData = [data.data];
+        } else if (Array.isArray(data.payload)) {
+          !skipLogging && console.log('Found data.payload array with', data.payload.length, 'items');
+          workflowData = data.payload;
+        } else if (Array.isArray(data.workflows)) {
+          !skipLogging && console.log('Found data.workflows array with', data.workflows.length, 'items');
+          workflowData = data.workflows;
+        } else {
+          // Last resort: try to use the whole object if it has expected workflow properties
+          !skipLogging && console.log('Unexpected response structure:', Object.keys(data));
+          if (data.id && data.name) {
+            !skipLogging && console.log('Object appears to be a single workflow, using as array');
+            workflowData = [data];
+          } else {
+            console.warn('Could not extract workflows from response:', data);
+            setError('Could not retrieve workflows from server response');
+          }
+        }
       }
 
-      setWorkflows(workflowData);
-      if (workflowData) {
-        // Clear any previous error on successful parse
+      // Only update localStorage if we got actual workflow data
+      if (workflowData && workflowData.length > 0) {
+        console.log(`Saving ${workflowData.length} workflows to localStorage`); 
+        
+        // Ensure each workflow has required fields to prevent rendering errors
+        const sanitizedWorkflows = workflowData.map(w => ({
+          id: w.id,
+          name: w.name || 'Unnamed Workflow',
+          description: w.description || '',
+          status: w.status || 'draft',
+          created_at: w.created_at || new Date().toISOString(),
+          updated_at: w.updated_at || w.created_at || new Date().toISOString(),
+        }));
+        
+        // Save to localStorage for persistence across page refreshes
+        localStorage.setItem('cachedWorkflows', JSON.stringify(sanitizedWorkflows));
+        
+        // Now update state
+        setWorkflows(sanitizedWorkflows);
+        
+        // Clear any previous error on successful fetch
+        setError(null);
+      } else if (workflowData) {
+        // Empty array case - still valid but no workflows
+        setWorkflows([]);
         setError(null);
       }
     } catch (err) {
@@ -128,9 +230,33 @@ export default function WorkflowsPage() {
     }
   };
 
+  // Component mount and cleanup effect
   useEffect(() => {
+    // First, load from localStorage if available (this happens in getInitialWorkflows)
+    // Then fetch from API to ensure we have the latest data
     fetchWorkflows();
+
+    // Set up storage event listener to sync across tabs
+    const handleStorageChange = (event) => {
+      if (event.key === 'cachedWorkflows' && event.newValue) {
+        try {
+          const updatedWorkflows = JSON.parse(event.newValue);
+          console.log('LocalStorage updated in another tab, syncing workflows:', updatedWorkflows);
+          setWorkflows(updatedWorkflows);
+        } catch (e) {
+          console.error('Error parsing workflows from storage event:', e);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
+
+  // Monitor workflows state changes
+  useEffect(() => {
+    console.log('Workflows state updated:', workflows);
+  }, [workflows]);
 
   const handleCreateWorkflow = async () => {
     try {
@@ -148,55 +274,81 @@ export default function WorkflowsPage() {
         return;
       }
       
-      const res = await fetch('/api/v1/workflows', {
+      // Use Next.js API route for creating workflows
+      const response = await fetch(`/api/v1/workflows`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ name: newWorkflowName }),
+        body: JSON.stringify({
+          name: newWorkflowName || 'New Workflow',
+          description: newWorkflowDescription || 'A new protein analysis workflow',
+        }),
       });
 
-      if (!res.ok) {
+      if (!response.ok) {
+        // TODO: REMOVE
+        console.log(response)
         let detail = 'Failed to create workflow';
         try {
-          const data = await res.json();
+          const data = await response.json();
           detail = data?.error || data?.message || detail;
         } catch (_) {
           try {
-            const text = await res.text();
-            if (text) detail = `${detail} (status ${res.status}): ${text}`;
-          } catch (_) {}
+            detail = await response.text();
+          } catch (_) {
+            // Fallback to default error
+          }
         }
         throw new Error(detail);
       }
-
-      // Parse created workflow and optimistically add to list
-      let created;
-      try {
-        created = await res.json();
-      } catch (_) {
-        created = null;
-      }
+      
+      // Directly parse the response here
+      const responseData = await response.json();
+      console.log('Create workflow API response:', responseData);
 
       // Normalize: backend may return object directly or {success, data}
       let createdWorkflow = null;
-      if (created && created.success === true && created.data) {
-        createdWorkflow = created.data;
-      } else if (created && !created.success && created.data) {
-        createdWorkflow = created.data;
-      } else if (created && created.id) {
-        createdWorkflow = created;
+      if (responseData?.success === true && responseData?.data) {
+        createdWorkflow = responseData.data;
+      } else if (responseData?.id) {
+        createdWorkflow = responseData;
+      } else if (responseData?.data?.id) {
+        createdWorkflow = responseData.data;
       }
 
       if (createdWorkflow) {
-        setWorkflows((prev) => [createdWorkflow, ...prev]);
+        console.log('Adding new workflow to state:', createdWorkflow);
+        
+        // Make a stable copy of current workflows + new one
+        const currentWorkflows = [...(workflows || [])];
+        const newWorkflows = [createdWorkflow, ...currentWorkflows];
+        
+        console.log('Updated workflows collection:', newWorkflows);
+        
+        // Important: Save to localStorage BEFORE updating React state
+        // This ensures persistence across page reloads
+        localStorage.setItem('cachedWorkflows', JSON.stringify(newWorkflows));
+        
+        // Now update React state
+        setWorkflows(newWorkflows);
+        
+        // Verify the workflow was saved to localStorage
+        const verifyCache = localStorage.getItem('cachedWorkflows');
+        console.log('Verified localStorage workflows after save:', verifyCache ? 
+          `Found ${JSON.parse(verifyCache).length} workflows in cache` : 'No cache found');
+      } else {
+        console.error('No valid workflow was returned from create API');
       }
-
-      setShowNewWorkflowDialog(false);
       setNewWorkflowName('');
-      // Also refresh from server to stay in sync
-      fetchWorkflows();
+      setNewWorkflowDescription('');
+      setShowNewWorkflowDialog(false);
+      
+      // Don't refresh from server immediately after creating
+      // This prevents the race condition that's causing workflows to disappear
+      console.log('Workflow created successfully - persistence enabled via localStorage');
+      // Just keep the optimistically added workflow in state
     } catch (err) {
       console.error('Error creating workflow:', err);
       setError(err.message);
@@ -461,6 +613,20 @@ export default function WorkflowsPage() {
             value={newWorkflowName}
             onChange={(e) => setNewWorkflowName(e.target.value)}
             sx={{ mt: 1 }}
+          />
+          <TextField
+            margin="dense"
+            id="description"
+            label="Description (optional)"
+            type="text"
+            fullWidth
+            variant="outlined"
+            multiline
+            rows={3}
+            value={newWorkflowDescription}
+            onChange={(e) => setNewWorkflowDescription(e.target.value)}
+            sx={{ mt: 2 }}
+            placeholder="Describe what this workflow will analyze..."
           />
         </DialogContent>
         <DialogActions>

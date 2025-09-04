@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+
+	"github.com/joho/godotenv"
 	"os"
 
 	"protchain/internal/config"
@@ -14,6 +16,11 @@ import (
 )
 
 func main() {
+	// Load .env file
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Warning: .env file not found, using environment variables")
+	}
 	// Load configuration
 	cfg := config.Load()
 
@@ -89,6 +96,7 @@ func main() {
 			workflows.PUT("/:id", workflowHandler.UpdateWorkflow)
 			workflows.DELETE("/:id", workflowHandler.DeleteWorkflow)
 			workflows.PUT("/:id/blockchain", workflowHandler.UpdateWorkflowBlockchainInfo)
+			workflows.GET("/:id/pdb", workflowHandler.GetWorkflowPDB)
 		}
 
 		// Team management routes

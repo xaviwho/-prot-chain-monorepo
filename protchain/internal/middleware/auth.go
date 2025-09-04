@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -32,15 +33,21 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
+			log.Printf("AuthMiddleware: Invalid token: %v", err)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			c.Abort()
 			return
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			c.Set("user_id", int(claims["user_id"].(float64)))
-			c.Set("email", claims["email"].(string))
+			log.Printf("AuthMiddleware: Valid token received. Claims: %+v", claims)
+			userID := int(claims["user_id"].(float64))
+			email := claims["email"].(string)
+			log.Printf("AuthMiddleware: Extracted user_id: %d, email: %s", userID, email)
+			c.Set("user_id", userID)
+			c.Set("email", email)
 		} else {
+			log.Printf("AuthMiddleware: Invalid token claims type: %T", token.Claims)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
 			c.Abort()
 			return

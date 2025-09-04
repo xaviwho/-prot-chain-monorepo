@@ -71,8 +71,12 @@ export async function POST(request) {
       .update(password)
       .digest('hex');
     
-    // Create new user
+    // Generate a simple ID for the user (in a real app, use a proper ID generator)
+    const userId = Date.now().toString();
+    
+    // Create new user with ID
     const newUser = {
+      id: userId,
       name,
       email,
       password: hashedPassword,
@@ -93,6 +97,7 @@ export async function POST(request) {
       payload: {
         token,
         user: {
+          id: newUser.id,
           name: newUser.name,
           email: newUser.email
         }

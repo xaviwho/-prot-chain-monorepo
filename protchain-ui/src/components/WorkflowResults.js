@@ -413,6 +413,7 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
 
   const renderStructurePreparation = (data) => {
     console.log('Structure preparation data:', data);
+    console.log('descriptors: ', data.data.details.descriptors);
     let structureData = {};
 
     if (typeof data === 'object' && data !== null) {
@@ -438,7 +439,9 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       }
     }
 
+    structureData = data.data.details.descriptors;
     console.log('Extracted structure data:', structureData);
+    
 
     if (Object.keys(structureData).length === 0) {
       return (
@@ -472,13 +475,100 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
               <TableBody>
                 {Object.entries(structureData).map(([key, value]) => (
                   <TableRow key={key}>
-                    <TableCell>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</TableCell>
-                    <TableCell>{typeof value === 'boolean' ? (value ? 'Yes' : 'No') : (typeof value === 'number' ? value.toFixed(2) : value)}</TableCell>
+                    <TableCell sx={{ verticalAlign: 'top', fontWeight: 'medium' }}>
+                      {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </TableCell>
+                    <TableCell>
+                      {typeof value === 'boolean' 
+                        ? (value ? 'Yes' : 'No') 
+                        : typeof value === 'number' 
+                        ? value.toFixed(2) 
+                        : typeof value === 'object' && value !== null
+                        ? (
+                          <Box sx={{ p: 1, backgroundColor: '#f8f9fa', borderRadius: 1 }}>
+                            <Table size="small" sx={{ minWidth: 'auto' }}>
+                              <TableBody>
+                                {Object.entries(value).map(([subKey, subValue]) => (
+                                  <TableRow key={subKey} sx={{ 
+                                    '&:last-child td': { border: 0 },
+                                    '& td': { borderBottom: '1px solid #e0e0e0' }
+                                  }}>
+                                    <TableCell sx={{ 
+                                      py: 0.75, 
+                                      px: 1, 
+                                      fontSize: '0.875rem', 
+                                      fontWeight: 500,
+                                      color: '#555',
+                                      width: '40%'
+                                    }}>
+                                      {subKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                    </TableCell>
+                                    <TableCell sx={{ 
+                                      py: 0.75, 
+                                      px: 1, 
+                                      fontSize: '0.875rem',
+                                      fontWeight: 400
+                                    }}>
+                                      {typeof subValue === 'number' 
+                                        ? subValue.toFixed(2) 
+                                        : typeof subValue === 'object' && subValue !== null
+                                        ? (
+                                          <Box sx={{ p: 0.5, backgroundColor: '#f0f0f0', borderRadius: 0.5, mt: 0.5 }}>
+                                            <Table size="small" sx={{ minWidth: 'auto' }}>
+                                              <TableBody>
+                                                {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                  <TableRow key={nestedKey} sx={{ 
+                                                    '&:last-child td': { border: 0 },
+                                                    '& td': { borderBottom: '1px solid #ddd' }
+                                                  }}>
+                                                    <TableCell sx={{ 
+                                                      py: 0.5, 
+                                                      px: 0.75, 
+                                                      fontSize: '0.8rem', 
+                                                      fontWeight: 500,
+                                                      color: '#666',
+                                                      width: '45%'
+                                                    }}>
+                                                      {nestedKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                                    </TableCell>
+                                                    <TableCell sx={{ 
+                                                      py: 0.5, 
+                                                      px: 0.75, 
+                                                      fontSize: '0.8rem',
+                                                      fontWeight: 400
+                                                    }}>
+                                                      {typeof nestedValue === 'number' 
+                                                        ? nestedValue.toFixed(2) 
+                                                        : typeof nestedValue === 'object' && nestedValue !== null
+                                                        ? JSON.stringify(nestedValue, null, 2)
+                                                        : String(nestedValue)
+                                                      }
+                                                    </TableCell>
+                                                  </TableRow>
+                                                ))}
+                                              </TableBody>
+                                            </Table>
+                                          </Box>
+                                        )
+                                        : String(subValue)
+                                      }
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </Box>
+                        )
+                        : value
+                      }
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
+
+          {console.log('params', params?.id)}
 
           {/* 3D Protein Structure Visualization */}
           <Box sx={{ mt: 4, mb: 3 }}>

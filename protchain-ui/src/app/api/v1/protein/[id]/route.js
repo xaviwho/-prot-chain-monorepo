@@ -42,10 +42,15 @@ export async function GET(request, context) {
             console.log('[PROTEIN API] PDB file fetched from fallback, length:', pdbFile.length);
         }
 
-        // Step 2: Call BioAPI to get metadata
+        // Step 2: Call BioAPI to get metadata and fetch additional protein information from UniProt
         let metadata = {};
+        let primaryAccession = 'N/A';
+        let recommendedName = 'N/A';
+        let organism = 'Unknown';
+        let publicationDate = 'N/A';
+        
         try {
-            console.log('[PROTEIN API] Calling BioAPI for', pdbId);
+            console.log(`[PROTEIN API] Calling BioAPI at ${BIOAPI_URL} for ${pdbId}`);
             const bioApiResponse = await fetch(`${BIOAPI_URL}/api/v1/structure/workflows/ad-hoc-analysis/structure`, {
                 method: 'POST',
                 headers: {
@@ -55,22 +60,82 @@ export async function GET(request, context) {
                     pdb_id: pdbId,
                     structure_data: pdbFile
                 }),
-                cache: 'no-store' // Bypass caching
+                cache: 'no-store',
             });
 
             if (bioApiResponse.ok) {
                 const bioApiData = await bioApiResponse.json();
+                metadata = bioApiData.data?.details?.descriptors || {};
                 console.log('[PROTEIN API] BioAPI response received');
                 
-                // Extract metadata from BioAPI response
-                metadata = bioApiData.data || bioApiData;
+                // Extract metadata from the PDB file header
+                try {
+                    // Look for TITLE, SOURCE, DBREF lines in the PDB file
+                    const titleMatch = pdbFile.match(/^TITLE\s+(.+)/m);
+                    if (titleMatch && titleMatch[1]) {
+                        recommendedName = titleMatch[1].trim();
+                    }
+                    
+                    const sourceMatch = pdbFile.match(/^SOURCE\s+(.+)/m);
+                    if (sourceMatch && sourceMatch[1]) {
+                        organism = sourceMatch[1].trim();
+                    }
+                    
+                    // Look for accession in DBREF lines
+                    const dbrefMatch = pdbFile.match(/^DBREF\s+\w+\s+\w+\s+(\w+)/m);
+                    if (dbrefMatch && dbrefMatch[1]) {
+                        primaryAccession = dbrefMatch[1].trim();
+                    }
+                    
+                    // Try to get publication date from JRNL or REMARK lines
+                    const dateMatch = pdbFile.match(/JRNL.*YEAR\s+(\d{4})/) || 
+                                     pdbFile.match(/REMARK\s+\d+\s+REFERENCE.*(\d{4})/) ||
+                                     pdbFile.match(/REVDAT\s+1\s+(\d{2}-\w{3}-\d{2})/); 
+                    if (dateMatch && dateMatch[1]) {
+                        publicationDate = dateMatch[1].trim();
+                    }
+                    
+                    // If we still couldn't find the accession, try from the RCSB API
+                    if (primaryAccession === 'N/A') {
+                        const rcsbResponse = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${pdbId}`, {
+                            cache: 'no-store'
+                        });
+                        
+                        if (rcsbResponse.ok) {
+                            const rcsbData = await rcsbResponse.json();
+                            primaryAccession = rcsbData?.rcsb_primary_citation?.pdbx_database_id_PubMed || 
+                                              rcsbData?.struct_ref?.[0]?.pdbx_db_accession || 
+                                              'N/A';
+                                              
+                            if (recommendedName === 'N/A' && rcsbData?.struct?.title) {
+                                recommendedName = rcsbData.struct.title;
+                            }
+                            
+                            if (organism === 'Unknown' && rcsbData?.entity?.[0]?.src_method === 'nat' && 
+                                rcsbData?.entity?.[0]?.pdbx_description) {
+                                organism = rcsbData.entity[0].pdbx_description;
+                            }
+                        }
+                    }
+                } catch (parseError) {
+                    console.error('[PROTEIN API] Error parsing PDB metadata:', parseError);
+                }
             } else {
-                console.error(`[PROTEIN API] BioAPI failed for ${pdbId}: ${bioApiResponse.status}`);
+                console.error(`[PROTEIN API] BioAPI failed: ${bioApiResponse.status} ${await bioApiResponse.text()}`);
             }
         } catch (bioApiError) {
-            console.error('[PROTEIN API] Failed to connect to BioAPI:', bioApiError);
+            console.error('[PROTEIN API] Failed to call BioAPI:', bioApiError);
             // Do not fail the request; proceed without metadata
         }
+        
+        // Add the extracted metadata to our response
+        metadata = {
+            ...metadata,
+            recommended_name: recommendedName,
+            organism: organism,
+            primary_accession: primaryAccession,
+            publication_date: publicationDate
+        };
 
         // Step 3: Generate cryptographic hash for blockchain reference
         console.log('[PROTEIN API] Generating SHA-256 hash of PDB file');

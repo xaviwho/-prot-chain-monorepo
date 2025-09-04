@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"time"
+	"fmt"
 
 	"protchain/internal/dto"
 	"protchain/internal/models"
@@ -21,17 +22,25 @@ func NewWorkflowHandler(db *sql.DB) *WorkflowHandler {
 }
 
 func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Success: false,
+			Error:   "User not authenticated",
+		})
+		return
+	}
 
 	rows, err := h.db.Query(`
-		SELECT id, name, description, status, results, blockchain_tx_hash, ipfs_hash, 
-		       blockchain_committed_at, created_at, updated_at
+		SELECT id, user_id, name, description, status, results, blockchain_tx_hash, ipfs_hash, 
+		       blockchain_committed_at, created_at, updated_at, team_id
 		FROM workflows 
 		WHERE user_id = $1 
 		ORDER BY created_at DESC
 	`, userID)
 
 	if err != nil {
+		fmt.Printf("failed to list workflow information: %s", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to fetch workflows",
@@ -40,23 +49,38 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 	}
 	defer rows.Close()
 
+
 	// Initialize as non-nil to ensure JSON encodes [] instead of null when empty
 	workflows := make([]dto.WorkflowResponse, 0)
 	for rows.Next() {
+		fmt.Println("Handling row")
+		fmt.Println("row is: ", rows)
 		var w models.Workflow
-		err := rows.Scan(&w.ID, &w.Name, &w.Description, &w.Status, &w.Results,
+		err := rows.Scan(&w.ID, &w.UserID, &w.Name, &w.Description, &w.Status, &w.Results,
 			&w.BlockchainTxHash, &w.IPFSHash, &w.BlockchainCommittedAt,
-			&w.CreatedAt, &w.UpdatedAt)
+			&w.CreatedAt, &w.UpdatedAt, &w.TeamID)
 		if err != nil {
+			fmt.Printf("failed to scan workflow information: %s", err)
 			continue
+		}
+		fmt.Printf("Workflow is: %v", w)
+
+		// Handle pointer fields safely
+		description := ""
+		if w.Description != nil {
+			description = *w.Description
+		}
+		results := ""
+		if w.Results != nil {
+			results = *w.Results
 		}
 
 		workflows = append(workflows, dto.WorkflowResponse{
 			ID:                    w.ID,
 			Name:                  w.Name,
-			Description:           w.Description,
+			Description:           description,
 			Status:                w.Status,
-			Results:               w.Results,
+			Results:               results,
 			BlockchainTxHash:      w.BlockchainTxHash,
 			IPFSHash:              w.IPFSHash,
 			BlockchainCommittedAt: w.BlockchainCommittedAt,
@@ -64,6 +88,7 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 			UpdatedAt:             w.UpdatedAt,
 		})
 	}
+	fmt.Printf("Workflows are: %v", workflows)
 
 	c.JSON(http.StatusOK, dto.SuccessResponse{
 		Success: true,
@@ -72,7 +97,14 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 }
 
 func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Success: false,
+			Error:   "User not authenticated",
+		})
+		return
+	}
 
 	var req dto.CreateWorkflowRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -84,13 +116,26 @@ func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
 	}
 
 	var workflowID int
-	err := h.db.QueryRow(`
-		INSERT INTO workflows (user_id, name, description, status, created_at, updated_at)
-		VALUES ($1, $2, $3, 'draft', $4, $5)
+		// Get user's default team_id
+	var teamID int
+	err := h.db.QueryRow(`SELECT team_id FROM team_members WHERE user_id = $1 AND role = 'owner'`, userID).Scan(&teamID)
+	if err != nil && err != sql.ErrNoRows {
+		fmt.Printf("Error selecting team id : %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to find user team",
+		})
+		return
+	}
+
+	err = h.db.QueryRow(`
+		INSERT INTO workflows (user_id, team_id, name, description, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, 'draft', $5, $6)
 		RETURNING id
-	`, userID, req.Name, req.Description, time.Now(), time.Now()).Scan(&workflowID)
+	`, userID, teamID, req.Name, req.Description, time.Now(), time.Now()).Scan(&workflowID)
 
 	if err != nil {
+		fmt.Printf("Error creating workflow : %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to create workflow",
@@ -147,9 +192,9 @@ func (h *WorkflowHandler) GetWorkflow(c *gin.Context) {
 		Data: dto.WorkflowResponse{
 			ID:                    w.ID,
 			Name:                  w.Name,
-			Description:           w.Description,
+			Description:           *w.Description,
 			Status:                w.Status,
-			Results:               w.Results,
+			Results:               *w.Results,
 			BlockchainTxHash:      w.BlockchainTxHash,
 			IPFSHash:              w.IPFSHash,
 			BlockchainCommittedAt: w.BlockchainCommittedAt,

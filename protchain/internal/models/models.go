@@ -20,14 +20,15 @@ type Workflow struct {
 	ID                    int        `json:"id" db:"id"`
 	UserID               int        `json:"user_id" db:"user_id"`
 	Name                 string     `json:"name" db:"name"`
-	Description          string     `json:"description" db:"description"`
+	Description          *string    `json:"description" db:"description"`
 	Status               string     `json:"status" db:"status"`
-	Results              string     `json:"results" db:"results"`
+	Results              *string    `json:"results" db:"results"`
 	BlockchainTxHash     *string    `json:"blockchain_tx_hash" db:"blockchain_tx_hash"`
 	IPFSHash             *string    `json:"ipfs_hash" db:"ipfs_hash"`
 	BlockchainCommittedAt *time.Time `json:"blockchain_committed_at" db:"blockchain_committed_at"`
 	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at" db:"updated_at"`
+	TeamID               *int       `json:"team_id" db:"team_id"`
 }
 
 // Organization represents an organization

@@ -9,6 +9,16 @@ const nextConfig = {
         source: '/api/v1/protein/:path*',
         destination: '/api/v1/protein/:path*',
       },
+      // This rule ensures that requests to our workflows API route are handled by Next.js
+      // and not proxied to the backend. It effectively does nothing, letting the request fall through.
+      {
+        source: '/api/v1/workflows',
+        destination: '/api/v1/workflows',
+      },
+      {
+        source: '/api/v1/workflows/:path*',
+        destination: '/api/v1/workflows/:path*',
+      },
       // This is the general proxy rule for all other /api/v1 calls.
       {
         source: '/api/v1/:path*',
