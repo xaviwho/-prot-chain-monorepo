@@ -568,13 +568,21 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             </Table>
           </TableContainer>
 
-          {console.log('params', params?.id)}
-
           {/* 3D Protein Structure Visualization */}
           <Box sx={{ mt: 4, mb: 3 }}>
-            <ProteinViewer 
+            {console.log("=== WORKFLOW RESULTS DEBUG ===")}
+            {console.log("Results object:", results)}
+            {console.log("Workflow object:", workflow)}
+            {console.log("PDB ID from results?.pdbId:", results?.pdbId)}
+            {console.log("PDB ID from results?.pdb_id:", results?.pdb_id)}
+            {console.log("PDB ID from workflow?.pdb_id:", workflow?.pdb_id)}
+            {console.log("PDB ID from workflow?.pdbId:", workflow?.pdbId)}
+            {console.log("=== END WORKFLOW RESULTS DEBUG ===")}
+            <ProteinViewer3D 
+              pdbId={results?.pdbId || results?.pdb_id || workflow?.pdb_id || workflow?.pdbId}
               workflowId={params?.id} 
-              pdbData={null} // Will be fetched by the component
+              stage="structure_preparation"
+              bindingSites={null}
             />
           </Box>
 

@@ -270,6 +270,7 @@ export default function WorkflowDetailPage() {
               workflowId={params.id}
               results={results}
               stage={stage}
+              workflow={workflow}
             />
           ) : (
             <Box sx={{ textAlign: 'center', py: 8 }}>

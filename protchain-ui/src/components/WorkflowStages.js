@@ -228,7 +228,12 @@ export default function WorkflowStages({
       }
       
       if (onStructureAnalysisComplete) {
-        onStructureAnalysisComplete(results);
+        // Include the PDB ID that was searched in the results
+        const resultsWithPdbId = {
+          ...results,
+          pdbId: pdbId.trim().toUpperCase()
+        };
+        onStructureAnalysisComplete(resultsWithPdbId);
       }
       
     } catch (err) {

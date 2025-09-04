@@ -120,6 +120,7 @@ export default function StructureUpload({ onUploadComplete, workflowId }) {
         onUploadComplete({
           status: 'success',
           ...data,
+          pdbId: pdbId.trim().toUpperCase(), // Include the PDB ID that was searched
           metadata: response.metadata.payload
         });
       } else {

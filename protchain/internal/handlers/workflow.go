@@ -313,3 +313,45 @@ func (h *WorkflowHandler) DeleteWorkflow(c *gin.Context) {
 
 	c.JSON(http.StatusOK, dto.SuccessResponse{Success: true, Message: "Workflow deleted successfully"})
 }
+
+func (h *WorkflowHandler) GetWorkflowPDB(c *gin.Context) {
+	workflowID := c.Param("id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Success: false,
+			Error:   "User not authenticated",
+		})
+		return
+	}
+
+	// Check if workflow belongs to user
+	var count int
+	err := h.db.QueryRow(`
+		SELECT COUNT(*) FROM workflows 
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID).Scan(&count)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Database error",
+		})
+		return
+	}
+
+	if count == 0 {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "Workflow not found",
+		})
+		return
+	}
+
+	// Return 404 since no PDB data is stored for this workflow yet
+	// Frontend will handle fetching from RCSB based on workflow name
+	c.JSON(http.StatusNotFound, dto.ErrorResponse{
+		Success: false,
+		Error:   "No PDB data stored for this workflow",
+	})
+}

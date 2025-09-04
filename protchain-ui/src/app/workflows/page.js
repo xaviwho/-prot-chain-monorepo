@@ -613,6 +613,8 @@ export default function WorkflowsPage() {
             value={newWorkflowName}
             onChange={(e) => setNewWorkflowName(e.target.value)}
             sx={{ mt: 1 }}
+            placeholder="e.g., 1ABC Lysozyme Analysis, 1INS Insulin Study"
+            helperText="Include a 4-character PDB ID (e.g., 1ABC, 1INS) to automatically load protein structures"
           />
           <TextField
             margin="dense"

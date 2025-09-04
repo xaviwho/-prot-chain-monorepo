@@ -3,295 +3,283 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Typography, CircularProgress, Alert } from '@mui/material';
 
-function ProteinViewer3D({ workflowId, stage = 'structure', bindingSites = null }) {
-  console.log('workflowId', workflowId);
-  console.log('stage', stage);
-  console.log('bindingSites', bindingSites);
-  const viewerRef = useRef(null);
+
+/**
+ * Loads the Mol* library dynamically to avoid SSR issues
+ * @returns {Promise<void>} Promise that resolves when library is loaded
+ */
+const loadMolstarLibrary = async () => {
+  // Check if library is already loaded
+  if (window.molstar) {
+    return;
+  }
+
+  // Load CSS first
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = 'https://unpkg.com/molstar@latest/build/viewer/molstar.css';
+  document.head.appendChild(css);
+
+  // Then load the script
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/molstar@latest/build/viewer/molstar.js';
+  script.async = true;
+
+  return new Promise((resolve, reject) => {
+    script.onload = () => {
+      // Wait a bit for molstar to initialize
+      setTimeout(resolve, 100);
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+
+/**
+ * Fetches PDB data directly from RCSB using PDB ID
+ * @param {string} pdbId - The PDB ID to fetch
+ * @returns {Promise<string>} Promise that resolves to PDB data string
+ */
+const fetchPDBData = async (pdbId) => {
+  try {
+    console.log("=== PDB FETCH DEBUG ===");
+    console.log("Fetching PDB data for ID:", pdbId);
+    
+    // Fetch directly from RCSB PDB
+    console.log(`Step 1: Fetching PDB structure ${pdbId} from RCSB...`);
+    const pdbUrl = `https://files.rcsb.org/download/${pdbId}.pdb`;
+    console.log("RCSB URL:", pdbUrl);
+    
+    const pdbResponse = await fetch(pdbUrl);
+    console.log("RCSB response status:", pdbResponse.status);
+    
+    if (pdbResponse.ok) {
+      const pdbData = await pdbResponse.text();
+      console.log(`✅ Successfully fetched ${pdbId} from RCSB PDB, length:`, pdbData.length);
+      console.log("First 200 chars:", pdbData.substring(0, 200));
+      return pdbData;
+    }
+    
+    // Try alternative RCSB endpoint
+    console.log("Step 2: Trying alternative RCSB endpoint...");
+    const altUrl = `https://files.rcsb.org/view/${pdbId}.pdb`;
+    console.log("Alternative RCSB URL:", altUrl);
+    
+    const altResponse = await fetch(altUrl);
+    console.log("Alternative RCSB response status:", altResponse.status);
+    
+    if (altResponse.ok) {
+      const pdbData = await altResponse.text();
+      console.log(`✅ Successfully fetched ${pdbId} from RCSB PDB (alternative), length:`, pdbData.length);
+      return pdbData;
+    }
+    
+    // If all else fails, throw an error
+    console.log("❌ All PDB fetch attempts failed");
+    console.log("=== END PDB FETCH DEBUG ===");
+    throw new Error(`Unable to fetch protein structure data for PDB ID: ${pdbId}. Please check the PDB ID and try again.`);
+    
+  } catch (error) {
+    console.error('❌ PDB fetch error:', error);
+    console.log("=== END PDB FETCH DEBUG ===");
+    throw error;
+  }
+};
+
+/**
+ * Waits for a DOM element to become available with retry logic
+ * @param {React.RefObject} elementRef - React ref to the element
+ * @param {number} maxAttempts - Maximum number of retry attempts
+ * @returns {Promise<HTMLElement>} Promise that resolves to the DOM element
+ */
+const waitForElement = async (elementRef, maxAttempts = 10) => {
+  for (let attempts = 0; attempts < maxAttempts; attempts++) {
+    if (elementRef.current) {
+      return elementRef.current;
+    }
+    
+    console.log(`Waiting for container... attempt ${attempts + 1}`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  throw new Error('Element not found after maximum attempts');
+};
+
+// Molstar handles styling automatically with good defaults
+// This function is kept for compatibility but not used
+
+// Binding site highlighting will be implemented later with Molstar's selection API
+// This function is kept for compatibility but simplified for now
+const highlightBindingSites = (viewer, bindingSites) => {
+  // TODO: Implement binding site highlighting with Molstar's selection system
+  if (bindingSites && bindingSites.length > 0) {
+    console.log('Binding sites detected:', bindingSites.length, 'sites');
+  }
+};
+
+/**
+ * Initializes and configures the 3Dmol viewer with protein data
+ * @param {HTMLElement} container - DOM container for the viewer
+ * @param {string} pdbId - PDB ID to fetch data for
+ * @param {Array} bindingSites - Binding sites to highlight
+ * @returns {Promise<Object>} Promise that resolves to the configured viewer
+ */
+const initializeViewer = async (container, pdbId, bindingSites) => {
+  // Validate prerequisites
+  if (!container) {
+    throw new Error('Container element is required');
+  }
+  
+  if (!pdbId) {
+    throw new Error('PDB ID is required');
+  }
+  
+  if (!window.molstar) {
+    throw new Error('Molstar library not available');
+  }
+
+  console.log('Creating Molstar viewer with container:', container);
+  console.log('Container dimensions:', container.offsetWidth, 'x', container.offsetHeight);
+  
+  try {
+    // Create the Molstar viewer instance with proper container constraints
+    const viewer = await window.molstar.Viewer.create(container, {
+      layoutIsExpanded: false,
+      layoutShowControls: false,
+      layoutShowRemoteState: false,
+      layoutShowSequence: false,
+      layoutShowLog: false,
+      layoutShowLeftPanel: false,
+      layoutShowRightPanel: false,
+      viewportShowExpand: false,
+      viewportShowSelectionMode: false,
+      viewportShowAnimation: false,
+      viewportShowSettings: false,
+      pdbProvider: 'rcsb',
+      extensions: [],
+      layoutControlsDisplay: 'none',
+      collapseLeftPanel: true,
+      collapseRightPanel: true,
+    });
+
+    console.log('Molstar viewer created:', viewer);
+
+    // Fetch and load protein data
+    const pdbData = await fetchPDBData(pdbId);
+    console.log('PDB data length:', pdbData ? pdbData.length : 'null');
+    
+    if (!pdbData || pdbData.length === 0) {
+      throw new Error('No PDB data available');
+    }
+
+    // Load structure from PDB data
+    const data = await viewer.loadStructureFromData(pdbData, 'pdb', { dataLabel: 'Protein Structure' });
+    console.log('Structure loaded:', data);
+
+    // Molstar automatically handles styling and camera positioning
+    // No additional setup needed
+    
+    console.log('Molstar viewer initialization complete');
+
+    return viewer;
+  } catch (error) {
+    console.error('Failed to initialize Molstar viewer:', error);
+    throw error;
+  }
+};
+
+/**
+ * 3D Protein Structure Viewer Component
+ * 
+ * Displays protein structures using 3Dmol.js with optional binding site highlighting
+ * 
+ * @param {Object} props - Component properties
+ * @param {string} props.pdbId - PDB ID to fetch and display (required)
+ * @param {string} props.workflowId - ID of the workflow (optional, for backward compatibility)
+ * @param {string} props.stage - Current stage of the workflow (unused but kept for compatibility)
+ * @param {Array} props.bindingSites - Array of binding sites to highlight on the structure
+ */
+function ProteinViewer3D({ pdbId, workflowId, stage = 'structure', bindingSites = null }) {
+  // Refs and state management
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [viewer, setViewer] = useState(null);
 
+  // Use provided pdbId or default to 2HIU if none provided
+  const targetPdbId = pdbId || '2HIU';
+  
+  // Debug logging to see what PDB ID we're actually using
+  console.log("=== PROTEIN VIEWER DEBUG ===");
+  console.log("Received pdbId prop:", pdbId);
+  console.log("Target PDB ID being used:", targetPdbId);
+  console.log("WorkflowId:", workflowId);
+  console.log("=== END PROTEIN VIEWER DEBUG ===");
+
+  /**
+   * Effect to load Molstar library first
+   */
   useEffect(() => {
-    let $3Dmol;
-    
-    // Dynamically import 3Dmol to avoid SSR issues
-    const load3Dmol = async () => {
+    const loadLibrary = async () => {
       try {
-        // Load 3Dmol.js library if not already loaded
-        if (!window.$3Dmol) {
-          const script = document.createElement('script');
-          script.src = 'https://3dmol.csb.pitt.edu/build/3Dmol-min.js';
-          script.async = true;
-          
-          await new Promise((resolve, reject) => {
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-          });
-        }
-
-        // Library loaded successfully, set loading to false so container can render
-        setLoading(false);
+        console.log("Loading Molstar library");
+        await loadMolstarLibrary();
+        console.log("Molstar library loaded successfully");
+        setLoading(false); // Allow container to render
       } catch (err) {
-        console.error('Failed to load 3Dmol.js library:', err);
-        setError('Failed to initialize 3D viewer');
+        console.error('Failed to load Molstar library:', err);
+        setError('Failed to load 3D viewer library');
         setLoading(false);
       }
     };
 
-    const initializeViewer = async () => {
-      console.log("initializing viewer");
-      try {
-        // Wait for container to be available
-        let attempts = 0;
-        while (!containerRef.current && attempts < 10) {
-          console.log(`Waiting for container... attempt ${attempts + 1}`);
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-        
-        console.log("containerRef.current:", containerRef.current);
-        console.log("window.$3Dmol:", window.$3Dmol);
-        
-        if (!containerRef.current) {
-          console.log("Exiting: containerRef.current is still null after waiting");
-          setError('Failed to initialize container');
-          setLoading(false);
-          return;
-        }
-        
-        if (!window.$3Dmol) {
-          console.log("Exiting: window.$3Dmol is not available");
-          setError('3Dmol library not loaded');
-          setLoading(false);
-          return;
-        }
+    loadLibrary();
+  }, []);
 
-        // Create 3Dmol viewer
-        const viewer3d = window.$3Dmol.createViewer(containerRef.current, {
-          defaultcolors: window.$3Dmol.rasmolElementColors
-        });
-
-        // Try to fetch PDB file from workflow, use sample data if not found
-        let pdbData;
-        try {
-          console.log("Fetching PDB data for workflow", workflowId);
-          const pdbResponse = await fetch(`/api/workflows/${workflowId}/pdb`);
-          console.log("PDB response status:", pdbResponse.status);
-          console.log("PDB response headers:", Object.fromEntries(pdbResponse.headers.entries()));
-          if (pdbResponse.ok) {
-            pdbData = await pdbResponse.text();
-            console.log('PDB data fetched successfully:', pdbData);
-          } else {
-            console.log("PDB data not found, using sample data");
-            // Use sample PDB data for demonstration
-            pdbData = `HEADER    TRANSFERASE/DNA                         20-MAY-93   1ABC              
-ATOM      1  N   ALA A   1      20.154  16.967  18.849  1.00 11.99           N  
-ATOM      2  CA  ALA A   1      19.030  16.101  18.673  1.00 13.51           C  
-ATOM      3  C   ALA A   1      17.664  16.749  18.953  1.00 12.34           C  
-ATOM      4  O   ALA A   1      17.657  17.849  19.492  1.00 15.94           O  
-ATOM      5  CB  ALA A   1      19.113  15.458  17.299  1.00 13.51           C  
-ATOM      6  N   TYR A   2      16.530  16.173  18.589  1.00 11.99           N  
-ATOM      7  CA  TYR A   2      15.217  16.618  18.790  1.00 13.51           C  
-ATOM      8  C   TYR A   2      14.154  15.549  18.673  1.00 12.34           C  
-ATOM      9  O   TYR A   2      14.357  14.357  18.492  1.00 15.94           O  
-ATOM     10  CB  TYR A   2      14.913  17.749  17.799  1.00 13.51           C  
-ATOM     11  CG  TYR A   2      15.749  18.999  17.899  1.00 14.99           C  
-ATOM     12  CD1 TYR A   2      15.749  19.849  18.999  1.00 16.99           C  
-ATOM     13  CD2 TYR A   2      16.549  19.249  16.799  1.00 16.99           C  
-ATOM     14  CE1 TYR A   2      16.549  20.999  19.099  1.00 18.99           C  
-ATOM     15  CE2 TYR A   2      17.349  20.399  16.899  1.00 18.99           C  
-ATOM     16  CZ  TYR A   2      17.349  21.249  17.999  1.00 19.99           C  
-ATOM     17  OH  TYR A   2      18.149  22.399  18.099  1.00 21.99           O  
-END`;
-          }
-        } catch (fetchError) {
-          console.warn('Failed to fetch PDB file, using sample data:', fetchError);
-          // Use sample PDB data as fallback
-          pdbData = `HEADER    TRANSFERASE/DNA                         20-MAY-93   1ABC              
-ATOM      1  N   ALA A   1      20.154  16.967  18.849  1.00 11.99           N  
-ATOM      2  CA  ALA A   1      19.030  16.101  18.673  1.00 13.51           C  
-ATOM      3  C   ALA A   1      17.664  16.749  18.953  1.00 12.34           C  
-ATOM      4  O   ALA A   1      17.657  17.849  19.492  1.00 15.94           O  
-ATOM      5  CB  ALA A   1      19.113  15.458  17.299  1.00 13.51           C  
-ATOM      6  N   TYR A   2      16.530  16.173  18.589  1.00 11.99           N  
-ATOM      7  CA  TYR A   2      15.217  16.618  18.790  1.00 13.51           C  
-ATOM      8  C   TYR A   2      14.154  15.549  18.673  1.00 12.34           C  
-ATOM      9  O   TYR A   2      14.357  14.357  18.492  1.00 15.94           O  
-ATOM     10  CB  TYR A   2      14.913  17.749  17.799  1.00 13.51           C  
-ATOM     11  CG  TYR A   2      15.749  18.999  17.899  1.00 14.99           C  
-ATOM     12  CD1 TYR A   2      15.749  19.849  18.999  1.00 16.99           C  
-ATOM     13  CD2 TYR A   2      16.549  19.249  16.799  1.00 16.99           C  
-ATOM     14  CE1 TYR A   2      16.549  20.999  19.099  1.00 18.99           C  
-ATOM     15  CE2 TYR A   2      17.349  20.399  16.899  1.00 18.99           C  
-ATOM     16  CZ  TYR A   2      17.349  21.249  17.999  1.00 19.99           C  
-ATOM     17  OH  TYR A   2      18.149  22.399  18.099  1.00 21.99           O  
-END`;
-        }
-
-        // Add PDB data to viewer
-        viewer3d.addModel(pdbData, 'pdb');
-
-        // Set basic protein visualization style
-        viewer3d.setStyle({}, {
-          cartoon: { color: 'spectrum' },
-          stick: { radius: 0.1 }
-        });
-
-        // Add binding sites if available
-        if (bindingSites && bindingSites.length > 0) {
-          bindingSites.forEach((site, index) => {
-            // Highlight binding site residues
-            if (site.residues && site.residues.length > 0) {
-              const residueSelection = {
-                resi: site.residues.map(r => r.residue_number)
-              };
-              
-              // Add surface for binding site
-              viewer3d.addSurface(window.$3Dmol.SurfaceType.VDW, {
-                opacity: 0.7,
-                color: index === 0 ? 'red' : 'blue'
-              }, residueSelection);
-
-              // Highlight residues
-              viewer3d.setStyle(residueSelection, {
-                cartoon: { color: index === 0 ? 'red' : 'blue' },
-                stick: { color: index === 0 ? 'red' : 'blue', radius: 0.2 }
-              });
-            }
-          });
-        }
-
-        // Set camera and render
-        viewer3d.zoomTo();
-        viewer3d.render();
-        viewer3d.zoom(1.2);
-
-        setViewer(viewer3d);
-        setLoading(false);
-
-      } catch (err) {
-        console.error('3D viewer initialization error:', err);
-        setError(err.message || 'Failed to load protein structure');
-        setLoading(false);
-      }
-    };
-
-    console.log("loading 3Dmol")
-    load3Dmol();
-
-    // Cleanup
-    return () => {
-      if (viewer) {
-        try {
-          viewer.clear();
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }
-    };
-  }, [workflowId, bindingSites]);
-
-  // Initialize viewer after container is rendered
+  /**
+   * Effect to initialize viewer after container is rendered
+   */
   useEffect(() => {
-    if (!loading && !error && containerRef.current && window.$3Dmol) {
-      console.log("Container is ready, initializing viewer");
-      const initializeViewer = async () => {
-        console.log("initializing viewer");
-        try {
-          console.log("containerRef.current:", containerRef.current);
-          console.log("window.$3Dmol:", window.$3Dmol);
-
-          // Create 3Dmol viewer
-          const viewer3d = window.$3Dmol.createViewer(containerRef.current, {
-            defaultcolors: window.$3Dmol.rasmolElementColors
-          });
-
-          // Try to fetch PDB file from workflow, use sample data if not found
-          let pdbData;
-          try {
-            console.log("Fetching PDB data for workflow", workflowId);
-            const pdbResponse = await fetch(`/api/workflows/${workflowId}/pdb`);
-            console.log("PDB response status:", pdbResponse.status);
-            if (pdbResponse.ok) {
-              pdbData = await pdbResponse.text();
-              console.log('PDB data fetched successfully');
-            } else {
-              console.log("PDB data not found, using sample data");
-              // Use sample PDB data for demonstration
-              pdbData = `HEADER    TRANSFERASE/DNA                         20-MAY-93   1ABC              
-ATOM      1  N   ALA A   1      20.154  16.967  18.849  1.00 11.99           N  
-ATOM      2  CA  ALA A   1      19.030  16.101  18.673  1.00 13.51           C  
-ATOM      3  C   ALA A   1      17.664  16.749  18.953  1.00 12.34           C  
-ATOM      4  O   ALA A   1      17.657  17.849  19.492  1.00 15.94           O  
-ATOM      5  CB  ALA A   1      19.113  15.458  17.299  1.00 13.51           C  
-END`;
-            }
-          } catch (fetchError) {
-            console.warn('Failed to fetch PDB file, using sample data:', fetchError);
-            pdbData = `HEADER    TRANSFERASE/DNA                         20-MAY-93   1ABC              
-ATOM      1  N   ALA A   1      20.154  16.967  18.849  1.00 11.99           N  
-ATOM      2  CA  ALA A   1      19.030  16.101  18.673  1.00 13.51           C  
-ATOM      3  C   ALA A   1      17.664  16.749  18.953  1.00 12.34           C  
-ATOM      4  O   ALA A   1      17.657  17.849  19.492  1.00 15.94           O  
-ATOM      5  CB  ALA A   1      19.113  15.458  17.299  1.00 13.51           C  
-END`;
-          }
-
-          // Add PDB data to viewer
-          viewer3d.addModel(pdbData, 'pdb');
-
-          // Set basic protein visualization style
-          viewer3d.setStyle({}, {
-            cartoon: { color: 'spectrum' },
-            stick: { radius: 0.1 }
-          });
-
-          // Add binding sites if available
-          if (bindingSites && bindingSites.length > 0) {
-            bindingSites.forEach((site, index) => {
-              if (site.residues && site.residues.length > 0) {
-                const residueSelection = {
-                  resi: site.residues.map(r => r.residue_number)
-                };
-                
-                viewer3d.addSurface(window.$3Dmol.SurfaceType.VDW, {
-                  opacity: 0.7,
-                  color: index === 0 ? 'red' : 'blue'
-                }, residueSelection);
-
-                viewer3d.setStyle(residueSelection, {
-                  cartoon: { color: index === 0 ? 'red' : 'blue' },
-                  stick: { color: index === 0 ? 'red' : 'blue', radius: 0.2 }
-                });
-              }
-            });
-          }
-
-          // Set camera and render
-          viewer3d.zoomTo();
-          viewer3d.render();
-          viewer3d.zoom(1.2);
-
-          setViewer(viewer3d);
-
-        } catch (err) {
-          console.error('3D viewer initialization error:', err);
-          setError(err.message || 'Failed to load protein structure');
-        }
-      };
-
-      initializeViewer();
+    if (loading || error || !containerRef.current || !window.molstar) {
+      return;
     }
-  }, [loading, error, workflowId, bindingSites]);
 
-  // Handle container resize
+    const setupViewer = async () => {
+      try {
+        console.log("Initializing Molstar viewer with PDB ID:", targetPdbId);
+        const viewerInstance = await initializeViewer(containerRef.current, targetPdbId, bindingSites);
+        console.log("Molstar viewer setup completed successfully");
+        setViewer(viewerInstance);
+      } catch (err) {
+        console.error('Failed to setup protein viewer:', err);
+        setError(err.message || 'Failed to load protein structure');
+      }
+    };
+
+    setupViewer();
+  }, [loading, error, targetPdbId, bindingSites]);
+
+  // Cleanup effect for viewer resources
+  useEffect(() => {
+    return () => {
+      if (viewer && viewer.dispose) {
+        try {
+          viewer.dispose();
+        } catch (e) {
+          // Ignore cleanup errors - viewer might already be destroyed
+        }
+      }
+    };
+  }, [viewer]);
+
+  /**
+   * Handle window resize events to maintain proper viewer dimensions
+   */
   useEffect(() => {
     const handleResize = () => {
-      if (viewer && containerRef.current) {
-        viewer.resize();
+      if (viewer && viewer.handleResize && containerRef.current) {
+        viewer.handleResize();
       }
     };
 
@@ -299,6 +287,7 @@ END`;
     return () => window.removeEventListener('resize', handleResize);
   }, [viewer]);
 
+  // Render loading state
   if (loading) {
     return (
       <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height={400}>
@@ -310,6 +299,7 @@ END`;
     );
   }
 
+  // Render error state
   if (error) {
     return (
       <Alert severity="error" sx={{ m: 2 }}>
@@ -320,8 +310,10 @@ END`;
     );
   }
 
+  // Render the main viewer interface
   return (
     <Box>
+      {/* Header with binding sites info */}
       <Typography variant="h6" gutterBottom>
         3D Protein Structure
         {bindingSites && bindingSites.length > 0 && (
@@ -330,6 +322,8 @@ END`;
           </Typography>
         )}
       </Typography>
+
+      {/* 3D Viewer Container */}
       <Box
         ref={containerRef}
         sx={{
@@ -337,9 +331,23 @@ END`;
           height: 400,
           border: '1px solid #ddd',
           borderRadius: 1,
-          backgroundColor: '#000'
+          backgroundColor: '#000',
+          position: 'relative',
+          overflow: 'hidden',
+          '& .msp-plugin': {
+            width: '100% !important',
+            height: '100% !important',
+            position: 'relative !important'
+          },
+          '& .msp-layout-expanded': {
+            position: 'relative !important',
+            width: '100% !important',
+            height: '100% !important'
+          }
         }}
       />
+
+      {/* Usage instructions */}
       <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
         Use mouse to rotate, zoom, and pan the structure. 
         {bindingSites && bindingSites.length > 0 && ' Binding sites are highlighted in red/blue.'}
