@@ -309,6 +309,9 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       return;
     }
 
+    console.log('Download debug - results object:', results);
+    console.log('Download debug - stage:', stage);
+
     try {
       let csvContent = '';
       
@@ -357,15 +360,43 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
         csvContent = metadata + '\n' + csvRows;
         
       } else {
-        // Handle structure preparation results (existing logic)
+        // Handle structure preparation results - check multiple possible locations
         let structureData = {};
-        if (stage === 'structure_preparation' && results.details?.descriptors) {
+        
+        // Try different possible locations for structure data
+        if (results.details?.descriptors) {
           structureData = results.details.descriptors;
         } else if (results.STRUCTURE_PREPARATION?.descriptors) {
           structureData = results.STRUCTURE_PREPARATION.descriptors;
         } else if (results.structure_preparation?.descriptors) {
           structureData = results.structure_preparation.descriptors;
+        } else if (results.data?.details?.descriptors) {
+          structureData = results.data.details.descriptors;
+        } else if (results.data?.descriptors) {
+          structureData = results.data.descriptors;
+        } else if (results.descriptors) {
+          structureData = results.descriptors;
+        } else {
+          // If no descriptors found, create basic structure info from available data
+          structureData = {
+            'PDB ID': results.pdbId || results.pdb_id || 'Unknown',
+            'Status': results.status || 'Completed',
+            'Analysis Type': 'Structure Preparation',
+            'Generated On': new Date().toISOString()
+          };
+          
+          // Add any other available data
+          Object.keys(results).forEach(key => {
+            if (!['pdbId', 'pdb_id', 'status'].includes(key) && 
+                typeof results[key] !== 'object' && 
+                results[key] !== null && 
+                results[key] !== undefined) {
+              structureData[key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())] = results[key];
+            }
+          });
         }
+        
+        console.log('Structure data for export:', structureData);
         
         if (Object.keys(structureData).length === 0) {
           console.log('No structure data found for export');

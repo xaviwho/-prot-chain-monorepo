@@ -17,36 +17,110 @@ export async function POST(request, { params }) {
     const uploadsDir = path.join(rootDir, 'uploads', id);
     console.log('DEBUG: uploadsDir:', uploadsDir);
     
-    // Check if PDB file exists
+    // Check if PDB file exists, if not try to fetch it from the workflow data
     const pdbPath = path.join(uploadsDir, 'input.pdb');
-    if (!fs.existsSync(pdbPath)) {
-      return NextResponse.json({ 
-        error: 'PDB file not found. Please run structure preparation first.' 
-      }, { status: 400 });
-    }
+    let pdbContent = null;
     
-    // Read PDB content
-    const pdbContent = fs.readFileSync(pdbPath, 'utf8');
+    if (!fs.existsSync(pdbPath)) {
+      console.error(`PDB file not found at: ${pdbPath}`);
+      console.error(`Uploads directory exists: ${fs.existsSync(uploadsDir)}`);
+      if (fs.existsSync(uploadsDir)) {
+        const files = fs.readdirSync(uploadsDir);
+        console.error(`Files in uploads directory: ${files.join(', ')}`);
+      }
+      
+      // Try to get PDB content from blockchain.json or fetch from PDB database
+      const blockchainPath = path.join(uploadsDir, 'blockchain.json');
+      if (fs.existsSync(blockchainPath)) {
+        try {
+          const blockchainData = JSON.parse(fs.readFileSync(blockchainPath, 'utf8'));
+          console.log('Blockchain data:', JSON.stringify(blockchainData, null, 2));
+          
+          // Try multiple possible locations for PDB ID
+          const pdbId = blockchainData.pdbId || 
+                       blockchainData.pdb_id || 
+                       blockchainData.data?.pdbId || 
+                       blockchainData.data?.pdb_id ||
+                       blockchainData.results?.pdbId ||
+                       blockchainData.results?.pdb_id ||
+                       blockchainData.verification_data?.ipfs?.content?.results?.pdbId ||
+                       blockchainData.verification_data?.ipfs?.content?.results?.data?.pdb_id ||
+                       blockchainData.verification_data?.ipfs?.content?.results?.data?.details?.descriptors?.pdb_id;
+          
+          console.log('Extracted PDB ID:', pdbId);
+          
+          if (pdbId) {
+            console.log(`Attempting to fetch PDB ${pdbId} from RCSB PDB database...`);
+            
+            // Fetch PDB from RCSB PDB database
+            const pdbResponse = await fetch(`https://files.rcsb.org/download/${pdbId}.pdb`);
+            if (pdbResponse.ok) {
+              pdbContent = await pdbResponse.text();
+              
+              // Save the PDB file for future use
+              fs.writeFileSync(pdbPath, pdbContent);
+              console.log(`Successfully fetched and saved PDB ${pdbId} to ${pdbPath}`);
+            } else {
+              console.error(`Failed to fetch PDB ${pdbId} from RCSB: ${pdbResponse.statusText}`);
+              throw new Error(`Failed to fetch PDB ${pdbId} from RCSB: ${pdbResponse.statusText}`);
+            }
+          } else {
+            console.error('No PDB ID found in blockchain data');
+          }
+        } catch (error) {
+          console.error('Error processing blockchain.json or fetching PDB:', error);
+        }
+      }
+      
+      // If we still don't have PDB content, return error
+      if (!pdbContent) {
+        return NextResponse.json({ 
+          error: 'PDB file not found and could not be retrieved. Please complete structure preparation first.',
+          details: {
+            expected_path: pdbPath,
+            uploads_dir_exists: fs.existsSync(uploadsDir),
+            available_files: fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir) : [],
+            blockchain_file_exists: fs.existsSync(path.join(uploadsDir, 'blockchain.json'))
+          }
+        }, { status: 400 });
+      }
+    } else {
+      // Read existing PDB content
+      pdbContent = fs.readFileSync(pdbPath, 'utf8');
+    }
     
     // Call REAL bioapi binding site analysis
     console.log('Calling REAL bioapi binding site analysis...');
-    const bioApiResponse = await fetch('http://localhost:8000/api/v1/binding/direct-binding-analysis', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        workflow_id: id,
-        pdb_content: pdbContent,
-        wsl_path: `/app/uploads/${id}`
-      })
-    });
+    let bioApiResponse;
+    let bioApiResult;
     
-    if (!bioApiResponse.ok) {
-      throw new Error(`BioAPI request failed: ${bioApiResponse.status} ${bioApiResponse.statusText}`);
+    try {
+      bioApiResponse = await fetch('http://localhost:8000/api/v1/binding/direct-binding-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          pdb_content: pdbContent,
+          method: "fpocket",
+          output_format: "json"
+        })
+      });
+      
+      if (!bioApiResponse.ok) {
+        console.error(`BioAPI request failed: ${bioApiResponse.status} ${bioApiResponse.statusText}`);
+        const errorText = await bioApiResponse.text();
+        console.error('BioAPI error response:', errorText);
+        
+        throw new Error(`BioAPI service error: ${bioApiResponse.status} ${bioApiResponse.statusText}. Please ensure the BioAPI service is running on port 8000.`);
+      }
+      
+      bioApiResult = await bioApiResponse.json();
+    } catch (fetchError) {
+      console.error('Failed to connect to BioAPI:', fetchError);
+      throw new Error(`Cannot connect to BioAPI service: ${fetchError.message}. Please ensure the BioAPI service is running on port 8000.`);
     }
     
-    const bioApiResult = await bioApiResponse.json();
     console.log('REAL bioapi binding site analysis result:', bioApiResult);
     
     // The bioapi returns results directly in the response, not in a file

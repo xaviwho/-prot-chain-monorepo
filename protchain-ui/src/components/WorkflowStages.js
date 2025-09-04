@@ -148,29 +148,38 @@ export default function WorkflowStages({
   };
 
   const getStageStatus = (stageId) => {
+    // Check if stage is completed based on blockchain commits
+    const recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
+    const workflowCommits = recentCommits[workflowId] || {};
+    
+    if (workflowCommits[stageId]) {
+      return 'completed';
+    }
+    
     // Check if stage is completed based on API data
     if (workflowData?.completed_stages?.includes(stageId)) {
       return 'completed';
     }
     
-    // Use API current stage for determining active stage
-    const apiCurrentStage = workflowData?.stage || currentStage;
-    if (stageId === apiCurrentStage) {
-      return 'active';
+    // Sequential stage activation logic
+    const stageOrder = ['structure_preparation', 'binding_site_analysis', 'virtual_screening', 'molecular_dynamics', 'lead_optimization'];
+    const currentStageIndex = stageOrder.indexOf(stageId);
+    
+    // Structure preparation is always active initially
+    if (stageId === 'structure_preparation') {
+      return workflowCommits['structure_preparation'] ? 'completed' : 'active';
     }
     
-    // Determine if stage should be pending based on workflow progression
-    const currentIndex = getCurrentStageIndex();
-    const stageIndex = stages.findIndex(s => s.id === stageId);
-    
-    // If this stage comes before the current stage, it should be completed
-    if (stageIndex < currentIndex) {
-      return 'completed';
-    }
-    
-    // If this is the next stage after completed stages, make it active
-    if (workflowData?.completed_stages?.length > 0 && stageIndex === workflowData.completed_stages.length) {
-      return 'active';
+    // For subsequent stages, check if previous stage is blockchain committed
+    if (currentStageIndex > 0) {
+      const previousStage = stageOrder[currentStageIndex - 1];
+      const isPreviousStageCommitted = workflowCommits[previousStage];
+      
+      if (isPreviousStageCommitted) {
+        return 'active';
+      } else {
+        return 'pending';
+      }
     }
     
     return 'pending';

@@ -1,4 +1,9 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  env: {
+    WORKFLOW_TRACKER_ADDRESS: '0xAA3DFc054293Dd3731892A1Ba0366D6e6FB1Ee51',
+    PRIVATE_KEY: 'c8ed8a251f3d04f9efa44ed5bc769f0bd2d619987da02a16b8f04bc88778e8a0'
+  }
+};
 
 export default nextConfig;

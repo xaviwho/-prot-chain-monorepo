@@ -5,9 +5,9 @@ import { ethers } from 'ethers';
 const PURECHAIN_RPC_URL = 'https://purechainnode.com:8547';
 const CHAIN_ID = 900520900520;
 
-// Contract configuration (from .env)
-const WORKFLOW_TRACKER_ADDRESS = process.env.WORKFLOW_TRACKER_ADDRESS;
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
+// Contract configuration - using direct values since env vars aren't loading
+const WORKFLOW_TRACKER_ADDRESS = process.env.WORKFLOW_TRACKER_ADDRESS || '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d4d4';
+const PRIVATE_KEY = process.env.PRIVATE_KEY || '0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d';
 
 // Workflow Tracker ABI (simplified for result commits)
 const WORKFLOW_TRACKER_ABI = [
@@ -39,7 +39,10 @@ const WORKFLOW_TRACKER_ABI = [
 
 export async function POST(request) {
   try {
-    const { workflowId, ipfsHash, resultsHash, stage } = await request.json();
+    console.log('=== BLOCKCHAIN COMMIT DEBUG ===');
+    const body = await request.json();
+    console.log('Request body:', body);
+    const { workflowId, ipfsHash, resultsHash, stage } = body;
     
     if (!workflowId || !ipfsHash || !resultsHash || !stage) {
       return NextResponse.json(
@@ -48,9 +51,17 @@ export async function POST(request) {
       );
     }
 
+    console.log('Environment check:');
+    console.log('process.env.WORKFLOW_TRACKER_ADDRESS:', process.env.WORKFLOW_TRACKER_ADDRESS);
+    console.log('process.env.PRIVATE_KEY:', process.env.PRIVATE_KEY ? 'Present' : 'Missing');
+    console.log('All env keys:', Object.keys(process.env).filter(key => key.includes('WORKFLOW') || key.includes('PRIVATE')));
+    
     if (!WORKFLOW_TRACKER_ADDRESS || !PRIVATE_KEY) {
+      console.error('Missing environment variables:');
+      console.error('WORKFLOW_TRACKER_ADDRESS:', WORKFLOW_TRACKER_ADDRESS);
+      console.error('PRIVATE_KEY:', PRIVATE_KEY ? 'Present' : 'Missing');
       return NextResponse.json(
-        { error: 'Blockchain configuration missing. Check environment variables.' },
+        { error: 'Blockchain configuration missing. Check environment variables WORKFLOW_TRACKER_ADDRESS and PRIVATE_KEY.' },
         { status: 500 }
       );
     }
@@ -202,7 +213,7 @@ export async function POST(request) {
     };
 
     // Save blockchain verification data to persistent storage
-    const fs = require('fs');
+    const fs = require('fs').promises;
     const path = require('path');
     
     try {
@@ -213,8 +224,9 @@ export async function POST(request) {
       console.log('Creating blockchain data directory:', uploadsDir);
       
       // Ensure directory exists
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
+      const fsSync = require('fs');
+      if (!fsSync.existsSync(uploadsDir)) {
+        fsSync.mkdirSync(uploadsDir, { recursive: true });
         console.log('Created uploads directory:', uploadsDir);
       }
       
@@ -231,11 +243,11 @@ export async function POST(request) {
       };
       
       const blockchainPath = path.join(uploadsDir, 'blockchain.json');
-      fs.writeFileSync(blockchainPath, JSON.stringify(blockchainData, null, 2));
+      await fs.writeFile(blockchainPath, JSON.stringify(blockchainData, null, 2));
       console.log('Blockchain data successfully saved to:', blockchainPath);
       
       // Verify file was actually created
-      if (fs.existsSync(blockchainPath)) {
+      if (fsSync.existsSync(blockchainPath)) {
         console.log('Blockchain file verified to exist at:', blockchainPath);
       } else {
         console.error('ERROR: Blockchain file was not created!');
@@ -257,7 +269,12 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Blockchain commit error:', error);
+    console.error('=== BLOCKCHAIN COMMIT ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error code:', error.code);
+    console.error('Full error object:', error);
+    console.error('=== END BLOCKCHAIN COMMIT ERROR ===');
     
     // Handle specific blockchain errors
     if (error.code === 'NETWORK_ERROR') {
@@ -275,7 +292,7 @@ export async function POST(request) {
     }
 
     return NextResponse.json(
-      { error: error.message || 'Failed to commit to blockchain' },
+      { error: error.message || 'Failed to commit to blockchain', details: error.stack },
       { status: 500 }
     );
   }
