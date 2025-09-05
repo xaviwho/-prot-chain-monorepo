@@ -246,7 +246,11 @@ class RealBindingSiteDetection:
             # Sort by druggability score (best first)
             binding_sites.sort(key=lambda x: x['druggability_score'], reverse=True)
             
-            return binding_sites[:10]  # Return top 10 sites
+            # Filter out low-quality sites (druggability < 0.1) and return variable number of sites
+            quality_sites = [site for site in binding_sites if site['druggability_score'] >= 0.1]
+            
+            # Return all quality sites (no artificial limit), but cap at 15 for performance
+            return quality_sites[:15] if len(quality_sites) > 15 else quality_sites
             
         except Exception as e:
             print(f"Clustering error: {str(e)}")

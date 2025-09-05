@@ -738,13 +738,21 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
 
   const renderBindingSites = (data) => {
     console.log('Rendering binding sites with data:', data);
+    console.log('=== PDB ID DEBUG FOR BINDING SITES ===');
+    console.log('data?.pdbId:', data?.pdbId);
+    console.log('data?.pdb_id:', data?.pdb_id);
+    console.log('workflow?.pdb_id:', workflow?.pdb_id);
+    console.log('workflow?.pdbId:', workflow?.pdbId);
+    console.log('=== END PDB ID DEBUG ===');
     let bindingSites = [];
 
     if (data?.binding_sites && Array.isArray(data.binding_sites) && data.binding_sites.length > 0) {
       console.log('Found binding sites in data.binding_sites');
+      console.log('First binding site structure:', JSON.stringify(data.binding_sites[0], null, 2));
       bindingSites = data.binding_sites;
     } else if (data?.binding_site_analysis?.binding_sites && Array.isArray(data.binding_site_analysis.binding_sites) && data.binding_site_analysis.binding_sites.length > 0) {
       console.log('Found binding sites in data.binding_site_analysis.binding_sites');
+      console.log('First binding site structure:', JSON.stringify(data.binding_site_analysis.binding_sites[0], null, 2));
       bindingSites = data.binding_site_analysis.binding_sites;
     }
 
@@ -780,26 +788,14 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             Binding Site Visualization
           </Typography>
           
-          {/* 3D Viewer Container */}
-          <Box sx={{ position: 'relative', height: '600px', border: '1px solid #ddd', borderRadius: 1, mb: 3 }}>
-            <div 
-              id={`molviewer-${params?.id}`} 
-              style={{ width: '100%', height: '100%', position: 'relative' }}
-            >
-              <Box 
-                sx={{ 
-                  position: 'absolute', 
-                  top: '50%', 
-                  left: '50%', 
-                  transform: 'translate(-50%, -50%)',
-                  textAlign: 'center',
-                  zIndex: 1
-                }}
-              >
-                <CircularProgress />
-                <Typography variant="body2" sx={{ mt: 1 }}>Loading 3D structure...</Typography>
-              </Box>
-            </div>
+          {/* 3D Viewer Container with Binding Sites */}
+          <Box sx={{ mb: 3 }}>
+            <ProteinViewer3D 
+              pdbId={data?.pdb_id || data?.pdbId || workflow?.pdb_id || workflow?.pdbId || results?.pdbId || results?.pdb_id || '1AMC'}
+              workflowId={params?.id} 
+              stage="binding_site_analysis"
+              bindingSites={bindingSites}
+            />
           </Box>
           
           {/* Simple Controls */}
@@ -824,7 +820,7 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           <Accordion key={index} sx={{ mb: 2, '&:before': { display: 'none' }, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
             <AccordionSummary expandIcon={<ExpandMore />} sx={{ backgroundColor: '#f8f9fa' }}>
               <Typography sx={{ fontWeight: 'medium' }}>
-                Binding Site {index + 1} (Score: {site.score?.toFixed(2) || 'N/A'})
+                Binding Site {index + 1} (Volume: {site.volume?.toFixed(1) || 'N/A'} Å³{site.druggability ? `, Score: ${site.druggability.toFixed(2)}` : site.score ? `, Score: ${site.score.toFixed(2)}` : ''})
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
@@ -833,34 +829,48 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                   <TableBody>
                     <TableRow>
                       <TableCell>Volume</TableCell>
-                      <TableCell>{site.volume.toFixed(2)} Å³</TableCell>
+                      <TableCell>{site.volume?.toFixed(2) || 'N/A'} Å³</TableCell>
                     </TableRow>
-                    {site.druggability && (
+                    <TableRow>
+                      <TableCell>Pocket ID</TableCell>
+                      <TableCell>{site.id || site.pocket_id || (index + 1)}</TableCell>
+                    </TableRow>
+                    {(site.druggability || site.score) && (
                       <TableRow>
-                        <TableCell>Druggability</TableCell>
-                        <TableCell>{site.druggability.toFixed(2)}</TableCell>
+                        <TableCell>Druggability Score</TableCell>
+                        <TableCell>{(site.druggability || site.score)?.toFixed(3) || 'N/A'}</TableCell>
                       </TableRow>
                     )}
-                    {site.hydrophobicity && (
+                    {(site.hydrophobicity || site.hydrophobic_ratio) && (
                       <TableRow>
                         <TableCell>Hydrophobicity</TableCell>
-                        <TableCell>{site.hydrophobicity.toFixed(2)}</TableCell>
+                        <TableCell>{(site.hydrophobicity || site.hydrophobic_ratio)?.toFixed(3) || 'N/A'}</TableCell>
                       </TableRow>
                     )}
                     <TableRow>
-                      <TableCell>Center</TableCell>
-                      <TableCell>({site.center.x.toFixed(2)}, {site.center.y.toFixed(2)}, {site.center.z.toFixed(2)})</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Residues</TableCell>
-                      <TableCell>{site.residues.length} residues</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Residue List</TableCell>
-                      <TableCell sx={{ maxWidth: '400px', overflowX: 'auto' }}>
-                        {site.residues.map(r => `${r.name}${r.number}${r.chain}`).join(', ')}
+                      <TableCell>Center Coordinates</TableCell>
+                      <TableCell>
+                        {site.center ? 
+                          `(${site.center.x?.toFixed(2) || 'N/A'}, ${site.center.y?.toFixed(2) || 'N/A'}, ${site.center.z?.toFixed(2) || 'N/A'})` : 
+                          'N/A'
+                        }
                       </TableCell>
                     </TableRow>
+                    <TableRow>
+                      <TableCell>Residue Count</TableCell>
+                      <TableCell>{site.residues?.length || site.residue_count || 0} residues</TableCell>
+                    </TableRow>
+                    {site.residues && site.residues.length > 0 && (
+                      <TableRow>
+                        <TableCell>Residue List</TableCell>
+                        <TableCell sx={{ maxWidth: '400px', overflowX: 'auto' }}>
+                          {site.residues.map(r => {
+                            if (typeof r === 'string') return r;
+                            return `${r.name || r.resname || ''}${r.number || r.resnum || ''}${r.chain || ''}`;
+                          }).join(', ')}
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </TableContainer>

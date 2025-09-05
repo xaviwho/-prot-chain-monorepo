@@ -20,6 +20,7 @@ export async function POST(request, { params }) {
     // Check if PDB file exists, if not try to fetch it from the workflow data
     const pdbPath = path.join(uploadsDir, 'input.pdb');
     let pdbContent = null;
+    let pdbId = null;
     
     if (!fs.existsSync(pdbPath)) {
       console.error(`PDB file not found at: ${pdbPath}`);
@@ -37,7 +38,7 @@ export async function POST(request, { params }) {
           console.log('Blockchain data:', JSON.stringify(blockchainData, null, 2));
           
           // Try multiple possible locations for PDB ID
-          const pdbId = blockchainData.pdbId || 
+          pdbId = blockchainData.pdbId || 
                        blockchainData.pdb_id || 
                        blockchainData.data?.pdbId || 
                        blockchainData.data?.pdb_id ||
@@ -101,9 +102,8 @@ export async function POST(request, { params }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          pdb_content: pdbContent,
-          method: "fpocket",
-          output_format: "json"
+          pdb_id: pdbId || "unknown",
+          structure_data: pdbContent
         })
       });
       
@@ -125,14 +125,16 @@ export async function POST(request, { params }) {
     
     // The bioapi returns results directly in the response, not in a file
     // Check if bioapi result already contains binding sites
-    if (bioApiResult && bioApiResult.binding_sites) {
+    if (bioApiResult && bioApiResult.data && bioApiResult.data.binding_sites) {
       console.log('Found REAL binding site results in bioapi response:', bioApiResult);
       return NextResponse.json({
         status: 'success',
         message: 'REAL binding site analysis completed successfully',
-        binding_sites: bioApiResult.binding_sites,
-        method: bioApiResult.method || 'real_geometric_cavity_detection',
-        protein_atoms_count: bioApiResult.protein_atoms_count
+        binding_sites: bioApiResult.data.binding_sites,
+        method: bioApiResult.data.method || 'real_geometric_cavity_detection',
+        protein_atoms_count: bioApiResult.data.protein_atoms_count,
+        pdb_id: pdbId,
+        pdbId: pdbId
       });
     }
     
