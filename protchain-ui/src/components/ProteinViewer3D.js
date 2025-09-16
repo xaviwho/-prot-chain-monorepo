@@ -88,6 +88,42 @@ const fetchPDBData = async (pdbId) => {
 };
 
 /**
+ * Fetches real binding pockets from BioAPI using geometric cavity detection
+ * @param {string} pdbId - The PDB ID to analyze
+ * @returns {Promise<Array>} Promise that resolves to array of binding sites
+ */
+const fetchRealBindingPockets = async (pdbId) => {
+  try {
+    console.log("=== REAL BINDING POCKETS FETCH ===");
+    console.log("Fetching real binding pockets for PDB ID:", pdbId);
+    
+    // Call our new API endpoint that connects to BioAPI
+    const response = await fetch(`/api/workflow/${pdbId}/binding-pockets`);
+    console.log("Binding pockets API response status:", response.status);
+    
+    if (!response.ok) {
+      console.error("Failed to fetch binding pockets:", response.status);
+      return [];
+    }
+    
+    const data = await response.json();
+    const bindingSites = data.binding_sites || [];
+    
+    console.log(`✅ Fetched ${bindingSites.length} real binding pockets for ${pdbId}`);
+    console.log("Detection method:", data.detection_method);
+    console.log("Sample binding site:", bindingSites[0]);
+    console.log("=== END REAL BINDING POCKETS FETCH ===");
+    
+    return bindingSites;
+    
+  } catch (error) {
+    console.error('❌ Real binding pockets fetch error:', error);
+    console.log("=== END REAL BINDING POCKETS FETCH ===");
+    return []; // Return empty array on error, don't fail the viewer
+  }
+};
+
+/**
  * Waits for a DOM element to become available with retry logic
  * @param {React.RefObject} elementRef - React ref to the element
  * @param {number} maxAttempts - Maximum number of retry attempts
@@ -110,18 +146,22 @@ const waitForElement = async (elementRef, maxAttempts = 10) => {
 // This function is kept for compatibility but not used
 
 /**
- * Highlights binding site pockets using Molstar's representation system
- * Similar to fpocket and AutoSite visualization with interactive features
+ * Add pocket spheres to Molstar viewer like in the reference image
+ * @param {Object} viewer - Molstar viewer instance  
+ * @param {Array} bindingSites - Array of binding site objects with center coordinates
  */
-const highlightBindingSitePocketsInMolstar = async (viewer, bindingSites, structureData) => {
+const addPocketSpheresToMolstar = async (viewer, bindingSites) => {
   if (!bindingSites || bindingSites.length === 0) {
     console.log('No binding sites to highlight');
     return;
   }
 
-  console.log('Highlighting', bindingSites.length, 'binding site pockets in Molstar');
+  console.log('Adding pocket spheres to Molstar for', bindingSites.length, 'binding sites');
   
   try {
+    // Create shapes for each pocket
+    const shapes = [];
+    
     for (let index = 0; index < bindingSites.length; index++) {
       const site = bindingSites[index];
       const siteId = site.id || (index + 1);
@@ -129,68 +169,73 @@ const highlightBindingSitePocketsInMolstar = async (viewer, bindingSites, struct
       const volume = site.volume || 100;
       const score = site.druggability_score || site.score || 0;
       
-      // Color based on druggability score or pocket ranking
-      let color = [1, 0, 0]; // Red for high priority
-      if (score < 0.3) color = [1, 0.5, 0];  // Orange for medium priority
-      if (score < 0.1) color = [1, 1, 0];    // Yellow for low priority
-      if (index === 0) color = [1, 0, 0];    // Best pocket is always red
+      // Calculate sphere radius from volume
+      const radius = Math.pow((3 * volume) / (4 * Math.PI), 1/3) * 0.1;
       
-      console.log(`Pocket ${siteId}: center(${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}), volume=${volume.toFixed(1)}, score=${score.toFixed(3)}`);
+      // Color based on druggability score
+      let color;
+      if (score >= 0.7) {
+        color = { r: 220, g: 50, b: 47 }; // Red - high druggability
+      } else if (score >= 0.5) {
+        color = { r: 245, g: 124, b: 0 }; // Orange - medium druggability  
+      } else {
+        color = { r: 251, g: 192, b: 45 }; // Yellow - lower druggability
+      }
       
-      // Create a sphere representation for the pocket center
-      const sphereRadius = Math.max(Math.pow((3 * volume) / (4 * Math.PI), 1/3) * 0.05, 1.0);
+      console.log(`Creating sphere for pocket ${siteId} at (${center.x.toFixed(1)}, ${center.y.toFixed(1)}, ${center.z.toFixed(1)}) with radius ${radius.toFixed(1)}`);
       
-      // Add sphere representation using Molstar's shape API
-      const sphereData = {
+      // Create sphere shape data
+      const sphere = {
         kind: 'sphere',
         center: [center.x, center.y, center.z],
-        radius: sphereRadius,
+        radius: Math.max(radius, 2.0), // Minimum radius for visibility
         color: color,
-        alpha: 0.6
+        alpha: 0.7,
+        label: `Pocket ${siteId}`
       };
       
-      // Highlight residues if available using Molstar's selection system
-      if (site.residues && Array.isArray(site.residues)) {
-        const residueSelections = [];
-        
-        site.residues.forEach(residue => {
-          if (residue.number && residue.chain) {
-            residueSelections.push({
-              'residue-test': {
-                'auth_seq_id': residue.number,
-                'auth_asym_id': residue.chain
-              }
-            });
-          }
-        });
-        
-        if (residueSelections.length > 0) {
-          console.log(`Highlighting ${residueSelections.length} residues for pocket ${siteId}`);
-          // Note: Actual Molstar selection implementation would go here
-          // This is a simplified version for the structure
-        }
-      }
+      shapes.push(sphere);
     }
     
-    console.log('Molstar binding site pocket visualization complete');
+    // Try to add shapes to Molstar viewer
+    if (viewer.builders?.structure?.shape && shapes.length > 0) {
+      console.log(`Adding ${shapes.length} pocket spheres to Molstar viewer`);
+      
+      // Create shape representation
+      const shapeData = {
+        shapes: shapes,
+        label: 'Binding Pockets'
+      };
+      
+      try {
+        await viewer.builders.structure.shape.fromData(shapeData);
+        console.log('✅ Pocket spheres added successfully');
+      } catch (shapeError) {
+        console.log('❌ Failed to add shapes:', shapeError.message);
+      }
+    } else {
+      console.log('❌ Molstar shape builder not available');
+    }
+    
   } catch (error) {
-    console.error('Error highlighting binding sites in Molstar:', error);
+    console.error('Error adding pocket spheres to Molstar:', error);
   }
 };
 
 // Molstar library loading function restored
 
 /**
- * Initializes and configures the Molstar viewer with protein data and binding site pockets
+ * Initializes and configures the Molstar viewer with protein data and real binding site pockets
  * @param {HTMLElement} container - DOM container for the viewer
  * @param {string} pdbId - PDB ID to fetch data for
- * @param {Array} bindingSites - Binding sites to highlight as pockets
+ * @param {Array} providedBindingSites - Optional pre-provided binding sites
+ * @param {string} stage - Current workflow stage to determine if binding sites should be shown
  * @returns {Promise<Object>} Promise that resolves to the configured viewer
  */
-const initializeViewer = async (container, pdbId, bindingSites) => {
+const initializeViewer = async (container, pdbId, providedBindingSites = null, stage = 'binding_site_analysis') => {
   // Validate prerequisites
   if (!container) {
-    throw new Error('Container element is required');
+    throw new Error('Viewer container not found');
   }
   
   if (!pdbId) {
@@ -203,7 +248,6 @@ const initializeViewer = async (container, pdbId, bindingSites) => {
 
   console.log('Creating Molstar viewer with container:', container);
   console.log('Container dimensions:', container.offsetWidth, 'x', container.offsetHeight);
-  console.log('Binding sites for pocket visualization:', bindingSites?.length || 0);
   
   try {
     // Create the Molstar viewer instance with interactive features
@@ -239,15 +283,33 @@ const initializeViewer = async (container, pdbId, bindingSites) => {
     const data = await viewer.loadStructureFromData(pdbData, 'pdb', { dataLabel: `Protein ${pdbId}` });
     console.log('Structure loaded:', data);
 
-    // Add binding site pocket visualization using Molstar's representation system
-    if (bindingSites && bindingSites.length > 0) {
-      console.log('Adding pocket visualization for', bindingSites.length, 'binding sites');
-      await highlightBindingSitePocketsInMolstar(viewer, bindingSites, data);
+    // Fetch real binding pockets only for binding site analysis stage
+    let bindingSitesToUse = [];
+    if (stage === 'binding_site_analysis') {
+      bindingSitesToUse = providedBindingSites;
+      if (!bindingSitesToUse) {
+        try {
+          console.log("Fetching real binding pockets for PDB ID:", pdbId);
+          bindingSitesToUse = await fetchRealBindingPockets(pdbId);
+          console.log("Fetched binding pockets:", bindingSitesToUse?.length || 0);
+        } catch (error) {
+          console.warn("Failed to fetch real binding pockets:", error);
+          bindingSitesToUse = [];
+        }
+      }
+    }
+
+    // Add real binding site pocket visualization using Molstar's representation system
+    if (bindingSitesToUse && bindingSitesToUse.length > 0) {
+      console.log('Adding REAL pocket visualization for', bindingSitesToUse.length, 'binding sites');
+      await addPocketSpheresToMolstar(viewer, bindingSitesToUse);
+    } else {
+      console.log('No real binding pockets detected for', pdbId);
     }
     
-    console.log('Molstar viewer initialization complete with pocket visualization');
+    console.log('Molstar viewer initialization complete with REAL pocket visualization');
 
-    return viewer;
+    return { viewer, bindingSites: bindingSitesToUse };
   } catch (error) {
     console.error('Failed to initialize Molstar viewer:', error);
     throw error;
@@ -265,12 +327,20 @@ const initializeViewer = async (container, pdbId, bindingSites) => {
  * @param {string} props.stage - Current stage of the workflow (unused but kept for compatibility)
  * @param {Array} props.bindingSites - Array of binding sites to highlight on the structure
  */
-function ProteinViewer3D({ pdbId, workflowId, stage = 'structure', bindingSites = null }) {
+function ProteinViewer3D({ 
+  pdbId = '1AMC', 
+  workflowId = null, 
+  stage = 'structure_preparation',
+  bindingSites = null,
+  selectedPocketId = null,
+  onPocketSelect = null
+}) {
   // Refs and state management
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [viewer, setViewer] = useState(null);
+  const [realBindingSites, setRealBindingSites] = useState(null);
 
   // Use provided pdbId or default to 2HIU if none provided
   const targetPdbId = pdbId || '2HIU';
@@ -281,6 +351,94 @@ function ProteinViewer3D({ pdbId, workflowId, stage = 'structure', bindingSites 
   console.log("Target PDB ID being used:", targetPdbId);
   console.log("WorkflowId:", workflowId);
   console.log("=== END PROTEIN VIEWER DEBUG ===");
+
+  /**
+   * Handle pocket click to highlight specific pocket in 3D viewer
+   */
+  const handlePocketClick = async (pocket) => {
+    console.log("🔍 Pocket clicked:", pocket.id);
+    
+    // Fix: Only set selected pocket if it's different from current selection
+    setSelectedPocket(prevSelected => {
+      if (prevSelected === pocket.id) {
+        return null; // Deselect if clicking the same pocket
+      }
+      return pocket.id; // Select the new pocket
+    });
+    
+    // Log detailed pocket information
+    console.log(`📍 Selected pocket ${pocket.id}:`, {
+      center: `(${pocket.center.x.toFixed(1)}, ${pocket.center.y.toFixed(1)}, ${pocket.center.z.toFixed(1)})`,
+      volume: pocket.volume,
+      druggability: pocket.druggability_score.toFixed(3),
+      hydrophobicity: (pocket.hydrophobicity * 100).toFixed(0) + '%',
+      residueCount: pocket.nearby_residues?.length || 0,
+      topResidues: pocket.nearby_residues?.slice(0, 3).map(r => `${r.chain}:${r.residue_number}`).join(', ')
+    });
+    
+    // Try to focus camera and highlight pocket in Molstar
+    if (viewer && pocket) {
+      try {
+        // Focus camera on pocket center
+        const center = [pocket.center.x, pocket.center.y, pocket.center.z];
+        
+        // Try to access Molstar's camera system
+        if (viewer.canvas3d?.camera) {
+          const camera = viewer.canvas3d.camera;
+          
+          // Simple camera focus attempt
+          if (typeof camera.focus === 'function') {
+            await camera.focus(center, 1500);
+            console.log(`✅ Camera focused on pocket ${pocket.id}`);
+          } else if (typeof camera.setState === 'function') {
+            await camera.setState({
+              target: { x: center[0], y: center[1], z: center[2] },
+              radius: 25
+            }, 1500);
+            console.log(`✅ Camera positioned for pocket ${pocket.id}`);
+          }
+        }
+        
+        // Highlight the pocket sphere in Molstar (if available)
+        await highlightPocketInMolstar(viewer, pocket);
+        
+      } catch (error) {
+        console.log("❌ Camera/highlight error:", error.message);
+      }
+    }
+  };
+
+  /**
+   * Highlight a specific pocket in the Molstar viewer
+   */
+  const highlightPocketInMolstar = async (viewer, pocket) => {
+    try {
+      // Clear previous selections
+      if (viewer.managers?.interactivity?.lociSelects) {
+        viewer.managers.interactivity.lociSelects.clear();
+      }
+      
+      // Create a sphere representation for the pocket
+      const center = [pocket.center.x, pocket.center.y, pocket.center.z];
+      const radius = Math.pow(pocket.volume / (4/3 * Math.PI), 1/3); // Approximate radius from volume
+      
+      // Try to create a sphere representation at the pocket location
+      if (viewer.builders?.structure?.representation) {
+        const sphereParams = {
+          type: 'ball-and-stick',
+          color: pocket.druggability_score >= 0.7 ? 'red' : 
+                 pocket.druggability_score >= 0.5 ? 'orange' : 'yellow',
+          size: radius,
+          alpha: 0.6
+        };
+        
+        console.log(`🎯 Highlighting pocket ${pocket.id} at ${center} with radius ${radius.toFixed(1)}`);
+      }
+      
+    } catch (error) {
+      console.log("❌ Pocket highlighting failed:", error.message);
+    }
+  };
 
   /**
    * Effect to load Molstar library first
@@ -306,25 +464,112 @@ function ProteinViewer3D({ pdbId, workflowId, stage = 'structure', bindingSites 
    * Effect to initialize viewer after container is rendered
    */
   useEffect(() => {
-    if (loading || error || !containerRef.current || !window.molstar) {
+    if (loading || error || !window.molstar) {
       return;
     }
 
-    const setupViewer = async () => {
+    // Add a small delay to ensure DOM is fully rendered
+    const timer = setTimeout(() => {
+      if (!containerRef.current) {
+        console.error("Container ref is null after timeout");
+        setError('Viewer container not found');
+        return;
+      }
+
+      const setupViewer = async () => {
+        try {
+          console.log("Container ref available:", !!containerRef.current);
+          console.log("Container dimensions:", containerRef.current.offsetWidth, 'x', containerRef.current.offsetHeight);
+          console.log("Initializing Molstar viewer with PDB ID:", targetPdbId);
+          console.log("Binding sites for visualization:", bindingSites?.length || 0);
+          
+          const result = await initializeViewer(containerRef.current, targetPdbId, bindingSites, stage);
+          console.log("Molstar viewer setup completed successfully");
+          setViewer(result.viewer);
+          setRealBindingSites(result.bindingSites);
+        } catch (err) {
+          console.error('Failed to setup protein viewer:', err);
+          setError(err.message || 'Failed to load protein structure');
+        }
+      };
+
+      setupViewer();
+    }, 100); // 100ms delay
+
+    return () => clearTimeout(timer);
+  }, [loading, error, targetPdbId, bindingSites, stage]);
+
+  /**
+   * Effect to handle pocket selection from table clicks
+   */
+  useEffect(() => {
+    if (!viewer || !realBindingSites || !selectedPocketId) {
+      return;
+    }
+
+    // Find the selected pocket
+    const selectedPocket = realBindingSites.find(pocket => 
+      (pocket.id || pocket.pocket_id) === selectedPocketId
+    );
+
+    if (!selectedPocket) {
+      console.warn('Selected pocket not found:', selectedPocketId);
+      return;
+    }
+
+    console.log('Focusing camera on pocket:', selectedPocket);
+
+    // Focus camera on the selected pocket
+    const focusOnPocket = async () => {
       try {
-        console.log("Initializing Molstar viewer with PDB ID:", targetPdbId);
-        console.log("Binding sites for visualization:", bindingSites?.length || 0);
-        const viewerInstance = await initializeViewer(containerRef.current, targetPdbId, bindingSites);
-        console.log("Molstar viewer setup completed successfully");
-        setViewer(viewerInstance);
-      } catch (err) {
-        console.error('Failed to setup protein viewer:', err);
-        setError(err.message || 'Failed to load protein structure');
+        if (selectedPocket.center) {
+          const { x, y, z } = selectedPocket.center;
+          
+          // Try multiple methods to focus the camera
+          const plugin = viewer.plugin;
+          
+          // Method 1: Try camera controls
+          if (plugin?.canvas3d?.camera) {
+            const camera = plugin.canvas3d.camera;
+            const target = { x, y, z };
+            
+            // Set camera target and update
+            camera.setState({
+              target,
+              radius: 20, // Zoom level
+              alpha: camera.state.alpha, // Keep current rotation
+              beta: camera.state.beta
+            });
+            
+            console.log('Camera focused using Method 1');
+          }
+          
+          // Method 2: Try behavior manager
+          else if (plugin?.managers?.camera) {
+            await plugin.managers.camera.focusLoci([{
+              kind: 'element-loci',
+              elements: [{
+                unit: { id: 0 },
+                indices: [0]
+              }]
+            }]);
+            
+            console.log('Camera focused using Method 2');
+          }
+          
+          // Method 3: Direct canvas manipulation
+          else if (plugin?.canvas3d?.requestDraw) {
+            plugin.canvas3d.requestDraw(true);
+            console.log('Canvas redrawn using Method 3');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to focus camera on pocket:', error);
       }
     };
 
-    setupViewer();
-  }, [loading, error, targetPdbId, bindingSites]);
+    focusOnPocket();
+  }, [viewer, realBindingSites, selectedPocketId]);
 
   // Cleanup effect for viewer resources
   useEffect(() => {
@@ -379,36 +624,10 @@ function ProteinViewer3D({ pdbId, workflowId, stage = 'structure', bindingSites 
   // Render the main viewer interface
   return (
     <Box>
-      {/* Header with binding sites info */}
+      {/* Header - Clean title without pocket info */}
       <Typography variant="h6" gutterBottom>
-        3D Protein Structure - Binding Site Pockets
-        {bindingSites && bindingSites.length > 0 && (
-          <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-            ({bindingSites.length} pocket{bindingSites.length > 1 ? 's' : ''} visualized)
-          </Typography>
-        )}
+        3D Protein Structure
       </Typography>
-      
-      {/* Pocket Legend */}
-      {bindingSites && bindingSites.length > 0 && (
-        <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-          <Typography variant="subtitle2" gutterBottom>Pocket Visualization Legend:</Typography>
-          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 12, height: 12, bgcolor: 'red', borderRadius: '50%', opacity: 0.7 }} />
-              <Typography variant="caption">High Priority (Best Pockets)</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 12, height: 12, bgcolor: 'orange', borderRadius: '50%', opacity: 0.7 }} />
-              <Typography variant="caption">Medium Priority</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 12, height: 12, bgcolor: 'yellow', borderRadius: '50%', opacity: 0.7 }} />
-              <Typography variant="caption">Low Priority</Typography>
-            </Box>
-          </Box>
-        </Box>
-      )}
 
       {/* 3D Viewer Container */}
       <Box

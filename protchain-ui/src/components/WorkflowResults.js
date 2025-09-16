@@ -25,6 +25,7 @@ import { ExpandMore, Download, HourglassEmpty, ErrorOutline } from '@mui/icons-m
 import { saveAs } from 'file-saver';
 // Import 3D viewers
 import ProteinViewer3D from './ProteinViewer3D';
+import BindingSiteVisualizer from './BindingSiteVisualizer';
 // Alias for backward compatibility
 const ProteinViewer = ProteinViewer3D;
 
@@ -46,6 +47,7 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [verificationResult, setVerificationResult] = useState(blockchainData.verified ? blockchainData.verificationData : null);
   const [currentTab, setCurrentTab] = useState(activeTab);
+  const [selectedPocketId, setSelectedPocketId] = useState(null);
   const params = useParams();
   
   console.log('🔗 WorkflowResults blockchain initialization:');
@@ -601,14 +603,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
 
           {/* 3D Protein Structure Visualization */}
           <Box sx={{ mt: 4, mb: 3 }}>
-            {console.log("=== WORKFLOW RESULTS DEBUG ===")}
-            {console.log("Results object:", results)}
-            {console.log("Workflow object:", workflow)}
-            {console.log("PDB ID from results?.pdbId:", results?.pdbId)}
-            {console.log("PDB ID from results?.pdb_id:", results?.pdb_id)}
-            {console.log("PDB ID from workflow?.pdb_id:", workflow?.pdb_id)}
-            {console.log("PDB ID from workflow?.pdbId:", workflow?.pdbId)}
-            {console.log("=== END WORKFLOW RESULTS DEBUG ===")}
             <ProteinViewer3D 
               pdbId={results?.pdbId || results?.pdb_id || workflow?.pdb_id || workflow?.pdbId}
               workflowId={params?.id} 
@@ -737,22 +731,11 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   };
 
   const renderBindingSites = (data) => {
-    console.log('Rendering binding sites with data:', data);
-    console.log('=== PDB ID DEBUG FOR BINDING SITES ===');
-    console.log('data?.pdbId:', data?.pdbId);
-    console.log('data?.pdb_id:', data?.pdb_id);
-    console.log('workflow?.pdb_id:', workflow?.pdb_id);
-    console.log('workflow?.pdbId:', workflow?.pdbId);
-    console.log('=== END PDB ID DEBUG ===');
     let bindingSites = [];
 
     if (data?.binding_sites && Array.isArray(data.binding_sites) && data.binding_sites.length > 0) {
-      console.log('Found binding sites in data.binding_sites');
-      console.log('First binding site structure:', JSON.stringify(data.binding_sites[0], null, 2));
       bindingSites = data.binding_sites;
     } else if (data?.binding_site_analysis?.binding_sites && Array.isArray(data.binding_site_analysis.binding_sites) && data.binding_site_analysis.binding_sites.length > 0) {
-      console.log('Found binding sites in data.binding_site_analysis.binding_sites');
-      console.log('First binding site structure:', JSON.stringify(data.binding_site_analysis.binding_sites[0], null, 2));
       bindingSites = data.binding_site_analysis.binding_sites;
     }
 
@@ -782,6 +765,11 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           Binding Site Analysis Results
         </Typography>
 
+        {/* Binding Site Count Summary */}
+        <Typography variant="body1" sx={{ mb: 3, fontWeight: 'medium', color: 'text.secondary' }}>
+          The total number of detected binding sites is {bindingSites.length}
+        </Typography>
+
         {/* 3D Protein Structure with Binding Sites */}
         <Paper sx={{ p: 3, mb: 4, borderRadius: 2 }}>
           <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
@@ -790,11 +778,11 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           
           {/* 3D Viewer Container with Binding Sites */}
           <Box sx={{ mb: 3 }}>
-            <ProteinViewer3D 
-              pdbId={data?.pdb_id || data?.pdbId || workflow?.pdb_id || workflow?.pdbId || results?.pdbId || results?.pdb_id || '1AMC'}
-              workflowId={params?.id} 
-              stage="binding_site_analysis"
+            <BindingSiteVisualizer 
               bindingSites={bindingSites}
+              pdbId={data?.pdb_id || data?.pdbId || workflow?.pdb_id || workflow?.pdbId || results?.pdbId || results?.pdb_id || '1AMC'}
+              selectedPocketId={selectedPocketId}
+              onPocketSelect={setSelectedPocketId}
             />
           </Box>
           
@@ -813,70 +801,85 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           </Box>
         </Paper>
 
-        <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
-          Binding Site Details
-        </Typography>
-        {bindingSites.map((site, index) => (
-          <Accordion key={index} sx={{ mb: 2, '&:before': { display: 'none' }, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-            <AccordionSummary expandIcon={<ExpandMore />} sx={{ backgroundColor: '#f8f9fa' }}>
-              <Typography sx={{ fontWeight: 'medium' }}>
-                Binding Site {index + 1} (Volume: {site.volume?.toFixed(1) || 'N/A'} Å³{site.druggability ? `, Score: ${site.druggability.toFixed(2)}` : site.score ? `, Score: ${site.score.toFixed(2)}` : ''})
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <TableContainer>
-                <Table size="small">
-                  <TableBody>
-                    <TableRow>
-                      <TableCell>Volume</TableCell>
-                      <TableCell>{site.volume?.toFixed(2) || 'N/A'} Å³</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Pocket ID</TableCell>
-                      <TableCell>{site.id || site.pocket_id || (index + 1)}</TableCell>
-                    </TableRow>
-                    {(site.druggability || site.score) && (
-                      <TableRow>
-                        <TableCell>Druggability Score</TableCell>
-                        <TableCell>{(site.druggability || site.score)?.toFixed(3) || 'N/A'}</TableCell>
-                      </TableRow>
-                    )}
-                    {(site.hydrophobicity || site.hydrophobic_ratio) && (
-                      <TableRow>
-                        <TableCell>Hydrophobicity</TableCell>
-                        <TableCell>{(site.hydrophobicity || site.hydrophobic_ratio)?.toFixed(3) || 'N/A'}</TableCell>
-                      </TableRow>
-                    )}
-                    <TableRow>
-                      <TableCell>Center Coordinates</TableCell>
+        {/* Binding Site Results Table - Now displayed under the 3D viewer */}
+        <Paper sx={{ p: 3, mt: 3, borderRadius: 2 }}>
+          <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
+            Binding Site Analysis Results
+          </Typography>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Site ID</strong></TableCell>
+                  <TableCell><strong>Volume (Å³)</strong></TableCell>
+                  <TableCell><strong>Druggability Score</strong></TableCell>
+                  <TableCell><strong>Hydrophobicity</strong></TableCell>
+                  <TableCell><strong>Center Coordinates</strong></TableCell>
+                  <TableCell><strong>Key Residues</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {bindingSites.map((site, index) => {
+                  const siteId = site.id || site.pocket_id || (index + 1);
+                  const isSelected = selectedPocketId === siteId;
+                  const druggabilityScore = site.druggability || site.score || site.druggability_score || 0;
+                  
+                  // Color based on druggability score (matching fpocket style)
+                  const getPocketColor = (score) => {
+                    if (score >= 0.7) return '#d32f2f'; // Red - high druggability
+                    if (score >= 0.5) return '#f57c00'; // Orange - medium druggability  
+                    return '#fbc02d'; // Yellow - lower druggability
+                  };
+                  
+                  return (
+                    <TableRow 
+                      key={index} 
+                      hover 
+                      onClick={() => setSelectedPocketId(isSelected ? null : siteId)}
+                      sx={{
+                        cursor: 'pointer',
+                        backgroundColor: isSelected ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
+                        '&:hover': {
+                          backgroundColor: isSelected ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)'
+                        },
+                        border: isSelected ? '2px solid #1976d2' : 'none'
+                      }}
+                    >
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box 
+                            sx={{ 
+                              width: 12, 
+                              height: 12, 
+                              borderRadius: '50%', 
+                              backgroundColor: getPocketColor(druggabilityScore),
+                              border: '1px solid rgba(0,0,0,0.2)'
+                            }} 
+                          />
+                          {siteId}
+                        </Box>
+                      </TableCell>
+                      <TableCell>{site.volume?.toFixed(1) || 'N/A'}</TableCell>
+                      <TableCell>{druggabilityScore?.toFixed(3) || 'N/A'}</TableCell>
+                      <TableCell>{(site.hydrophobicity || site.hydrophobic_ratio)?.toFixed(3) || 'N/A'}</TableCell>
                       <TableCell>
                         {site.center ? 
-                          `(${site.center.x?.toFixed(2) || 'N/A'}, ${site.center.y?.toFixed(2) || 'N/A'}, ${site.center.z?.toFixed(2) || 'N/A'})` : 
+                          `(${site.center.x?.toFixed(1)}, ${site.center.y?.toFixed(1)}, ${site.center.z?.toFixed(1)})` : 
                           'N/A'
                         }
                       </TableCell>
+                      <TableCell>
+                        {site.nearby_residues?.slice(0, 3).map(r => `${r.residue_name}${r.residue_number}`).join(', ') || 
+                         site.residues?.slice(0, 3).map(r => `${r.name || r.residue_name}${r.number || r.residue_number}`).join(', ') || 
+                         'N/A'}
+                      </TableCell>
                     </TableRow>
-                    <TableRow>
-                      <TableCell>Residue Count</TableCell>
-                      <TableCell>{site.residues?.length || site.residue_count || 0} residues</TableCell>
-                    </TableRow>
-                    {site.residues && site.residues.length > 0 && (
-                      <TableRow>
-                        <TableCell>Residue List</TableCell>
-                        <TableCell sx={{ maxWidth: '400px', overflowX: 'auto' }}>
-                          {site.residues.map(r => {
-                            if (typeof r === 'string') return r;
-                            return `${r.name || r.resname || ''}${r.number || r.resnum || ''}${r.chain || ''}`;
-                          }).join(', ')}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </AccordionDetails>
-          </Accordion>
-        ))}
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
 
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
           <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>

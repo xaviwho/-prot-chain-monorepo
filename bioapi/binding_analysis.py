@@ -181,10 +181,22 @@ class RealBindingSiteDetection:
                 indices = np.random.choice(len(cavity_points), 5000, replace=False)
                 cavity_points = cavity_points[indices]
             
-            # Simple distance-based clustering
+            # Protein size-aware clustering
+            num_atoms = len(protein_coords)
+            
+            # Dynamic clustering parameters based on protein size
+            if num_atoms < 1000:  # Small protein
+                cluster_distance = 3.5
+                min_cluster_size = 3
+            elif num_atoms < 3000:  # Medium protein
+                cluster_distance = 4.0
+                min_cluster_size = 5
+            else:  # Large protein
+                cluster_distance = 4.5
+                min_cluster_size = 8
+            
             clusters = []
             used_points = set()
-            cluster_distance = 4.0  # Points within 4Å belong to same cluster
             
             for i, point in enumerate(cavity_points):
                 if i in used_points:
@@ -204,7 +216,8 @@ class RealBindingSiteDetection:
                         cluster_indices.add(idx)
                         used_points.add(idx)
                 
-                if len(cluster_points) >= 5:  # Minimum cluster size
+                # Use dynamic minimum cluster size
+                if len(cluster_points) >= min_cluster_size:
                     clusters.append(np.array(cluster_points))
             
             print(f"Found {len(clusters)} cavity clusters")
@@ -212,7 +225,8 @@ class RealBindingSiteDetection:
             # Convert clusters to binding site descriptions
             binding_sites = []
             for i, cluster in enumerate(clusters):
-                if len(cluster) < 5:
+                # Use the same dynamic minimum size as clustering
+                if len(cluster) < min_cluster_size:
                     continue
                 
                 # Calculate cluster properties
@@ -236,9 +250,9 @@ class RealBindingSiteDetection:
                     "volume": round(volume, 1),
                     "druggability_score": round(druggability, 3),
                     "hydrophobicity": round(hydrophobicity, 3),
-                    "nearby_residues": nearby_residues[:10],  # Limit to top 10
+                    "nearby_residues": nearby_residues,
                     "cavity_points": len(cluster),
-                    "shape_complementarity": round(random.uniform(0.6, 0.9), 3)
+                    "surface_accessibility": self._calculate_surface_accessibility(center, protein_coords)
                 }
                 
                 binding_sites.append(binding_site)
@@ -246,11 +260,20 @@ class RealBindingSiteDetection:
             # Sort by druggability score (best first)
             binding_sites.sort(key=lambda x: x['druggability_score'], reverse=True)
             
-            # Filter out low-quality sites (druggability < 0.1) and return variable number of sites
-            quality_sites = [site for site in binding_sites if site['druggability_score'] >= 0.1]
+            # Dynamic filtering based on actual druggability scores - no artificial limits
+            # Only return sites that meet minimum druggability threshold
+            min_druggability = 0.4  # Reasonable minimum for drug binding
             
-            # Return all quality sites (no artificial limit), but cap at 15 for performance
-            return quality_sites[:15] if len(quality_sites) > 15 else quality_sites
+            # Filter sites that meet the minimum threshold
+            viable_sites = [site for site in binding_sites if site['druggability_score'] >= min_druggability]
+            
+            # If no sites meet the threshold, lower it and try again
+            if not viable_sites and binding_sites:
+                min_druggability = 0.25
+                viable_sites = [site for site in binding_sites if site['druggability_score'] >= min_druggability]
+            
+            # Return all viable sites - let the natural cavity detection determine the count
+            return viable_sites
             
         except Exception as e:
             print(f"Clustering error: {str(e)}")
@@ -293,23 +316,68 @@ class RealBindingSiteDetection:
             return []
     
     def _calculate_druggability_score(self, cluster_points: np.ndarray, nearby_residues: List[Dict]) -> float:
-        """Calculate druggability score based on cavity properties"""
+        """Calculate enhanced druggability score based on cavity properties and pharmaceutical criteria"""
         try:
-            # Base score from cavity size
+            # Calculate actual volume in Ų
             volume = len(cluster_points) * (1.5 ** 3)
-            size_score = min(volume / 1000.0, 1.0)  # Normalize to 0-1
             
-            # Bonus for hydrophobic residues
+            # Optimal binding site volume is 300-1000 Ų (Lipinski-like)
+            if volume < 200:
+                size_score = 0.1  # Too small for drug binding
+            elif volume > 1500:
+                size_score = 0.3  # Too large, likely not specific
+            elif 300 <= volume <= 800:
+                size_score = 1.0  # Optimal size
+            else:
+                size_score = 0.7  # Acceptable size
+            
+            # Enhanced hydrophobicity analysis
             hydrophobic_residues = ['ALA', 'VAL', 'LEU', 'ILE', 'PHE', 'TRP', 'MET', 'PRO']
+            polar_residues = ['SER', 'THR', 'ASN', 'GLN', 'TYR']
+            charged_residues = ['ARG', 'LYS', 'ASP', 'GLU', 'HIS']
+            
+            if not nearby_residues:
+                return 0.1
+            
             hydrophobic_count = sum(1 for res in nearby_residues if res['residue_name'] in hydrophobic_residues)
-            hydrophobic_score = min(hydrophobic_count / 10.0, 0.5)
+            polar_count = sum(1 for res in nearby_residues if res['residue_name'] in polar_residues)
+            charged_count = sum(1 for res in nearby_residues if res['residue_name'] in charged_residues)
             
-            # Combine scores
-            total_score = size_score + hydrophobic_score
-            return min(total_score, 1.0)
+            total_residues = len(nearby_residues)
+            hydrophobic_ratio = hydrophobic_count / total_residues
+            polar_ratio = polar_count / total_residues
+            charged_ratio = charged_count / total_residues
             
-        except:
-            return 0.5  # Default score
+            # Optimal binding sites have balanced hydrophobic/polar character
+            if 0.3 <= hydrophobic_ratio <= 0.7 and polar_ratio >= 0.2:
+                composition_score = 1.0  # Balanced composition
+            elif hydrophobic_ratio > 0.8:
+                composition_score = 0.4  # Too hydrophobic
+            elif hydrophobic_ratio < 0.2:
+                composition_score = 0.3  # Too polar
+            else:
+                composition_score = 0.6  # Acceptable
+            
+            # Penalty for too many charged residues (reduces selectivity)
+            if charged_ratio > 0.4:
+                composition_score *= 0.7
+            
+            # Depth assessment based on nearby residue count
+            if total_residues < 5:
+                depth_score = 0.2  # Too shallow
+            elif total_residues > 20:
+                depth_score = 0.6  # Too exposed
+            else:
+                depth_score = 1.0  # Good depth
+            
+            # Final druggability score (weighted combination)
+            final_score = (size_score * 0.4 + composition_score * 0.4 + depth_score * 0.2)
+            
+            return min(final_score, 1.0)
+            
+        except Exception as e:
+            print(f"Druggability calculation error: {str(e)}")
+            return 0.1
     
     def _calculate_hydrophobicity(self, nearby_residues: List[Dict]) -> float:
         """Calculate hydrophobicity score"""
@@ -324,3 +392,24 @@ class RealBindingSiteDetection:
             
         except:
             return 0.0
+    
+    def _calculate_surface_accessibility(self, center: np.ndarray, protein_coords: np.ndarray) -> float:
+        """Calculate surface accessibility score based on distance to protein surface"""
+        try:
+            # Find distances to all protein atoms
+            distances = np.linalg.norm(protein_coords - center, axis=1)
+            min_distance = np.min(distances)
+            
+            # Surface accessibility based on minimum distance to protein atoms
+            # Deeper pockets (further from surface) have lower accessibility
+            if min_distance < 2.0:
+                return 0.1  # Very buried
+            elif min_distance < 4.0:
+                return 0.3  # Moderately buried
+            elif min_distance < 6.0:
+                return 0.6  # Accessible
+            else:
+                return 0.9  # Highly accessible
+                
+        except:
+            return 0.5

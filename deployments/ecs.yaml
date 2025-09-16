@@ -1,0 +1,810 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: '[AWSDocs] ECS: load-balanced-web-application with EC2'
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: '10.0.0.0/16'
+    Description: CIDR block for the VPC
+  ProtChainAPIImage:
+    Type: String
+    Default: 'your-account.dkr.ecr.region.amazonaws.com/protchain-api:latest'
+    Description: ProtChain API container image
+  
+  BioAPIImage:
+    Type: String
+    Default: 'your-account.dkr.ecr.region.amazonaws.com/bioapi:latest'
+    Description: BioAPI container image
+  
+  PostgresImage:
+    Type: String
+    Default: 'postgres:13'
+    Description: PostgreSQL container image
+  
+  IPFSImage:
+    Type: String
+    Default: 'ipfs/kubo:latest'
+    Description: IPFS container image
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: '10.0.1.0/24'
+    Description: CIDR block for public subnet 1
+  
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: '10.0.3.0/24'
+    Description: CIDR block for private subnet 1
+  
+  ServiceName:
+    Type: String
+    Default: 'tutorial-app'
+    Description: Name of the ECS service
+  
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: Port on which the container listens
+  
+  DesiredCount:
+    Type: Number
+    Default: 2
+    Description: Desired number of tasks
+  
+  MinCapacity:
+    Type: Number
+    Default: 1
+    Description: Minimum number of tasks for auto scaling
+  
+  MaxCapacity:
+    Type: Number
+    Default: 10
+    Description: Maximum number of tasks for auto scaling
+
+  InstanceType:
+    Type: String
+    Default: 't2.micro'
+    Description: EC2 instance type for ECS cluster
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m5.large
+      - m5.xlarge
+      - c5.large
+      - c5.xlarge
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::ProtChainKeyPair
+    Description: EC2 Key Pair for SSH access to instances
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+
+  MinInstanceCount:
+    Type: Number
+    Default: 1
+    Description: Minimum number of EC2 instances
+  
+  MaxInstanceCount:
+    Type: Number
+    Default: 1
+    Description: Maximum number of EC2 instances
+  
+  DesiredInstanceCount:
+    Type: Number
+    Default: 1
+    Description: Desired number of EC2 instances
+
+Mappings:
+  AWSRegionToAMI:
+    us-east-1:
+      AMIID: ami-0c6b1d09930fac512
+    us-east-2:
+      AMIID: ami-0f924dc71d44d23e2
+    us-west-1:
+      AMIID: ami-056ee704806822732
+    us-west-2:
+      AMIID: ami-0c2d3e23f757b5d84
+    eu-west-1:
+      AMIID: ami-0c9c942bd7bf113a2
+    eu-west-2:
+      AMIID: ami-0015a39e4b7c0966f
+    eu-central-1:
+      AMIID: ami-0ce1e3f77cd41957e
+    ap-northeast-1:
+      AMIID: ami-0404778e217f54308
+    ap-southeast-1:
+      AMIID: ami-0c802847a7dd848c0
+    ap-southeast-2:
+      AMIID: ami-0b7dcd6e6fd797935
+
+Resources:
+  # VPC and Networking
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpc'
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-igw'
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # Public Subnets for ALB
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-subnet-1'
+
+  # Private Subnet for ECS Instances
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-subnet-1'
+
+  # NAT Gateway for private subnet internet access
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-nat-eip-1'
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-nat-1'
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-routes'
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-routes-1'
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  # EFS File System for persistent storage
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      CreationToken: !Sub '${AWS::StackName}-efs'
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-efs'
+
+  EFSMountTarget:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+    DependsOn: EFSSecurityGroup
+
+  # Security Groups
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-efs-sg'
+      GroupDescription: Security group for EFS
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 10.0.0.0/16
+          Description: Allow NFS from VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-efs-sg'
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-alb-sg'
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP traffic from internet
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb-sg'
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-ecs-sg'
+      GroupDescription: Security group for ECS instances
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 32768
+          ToPort: 65535
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: Allow dynamic port range from ALB
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.0.0.0/16
+          Description: Allow SSH from within VPC
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 10.0.0.0/16
+          Description: PostgreSQL inter-container communication
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: 10.0.0.0/16
+          Description: BioAPI inter-container communication
+        - IpProtocol: tcp
+          FromPort: 8082
+          ToPort: 8082
+          CidrIp: 10.0.0.0/16
+          Description: ProtChain API inter-container communication
+        - IpProtocol: tcp
+          FromPort: 4001
+          ToPort: 4001
+          CidrIp: 10.0.0.0/16
+          Description: IPFS P2P port
+        - IpProtocol: tcp
+          FromPort: 5001
+          ToPort: 5001
+          CidrIp: 10.0.0.0/16
+          Description: IPFS API port
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 10.0.0.0/16
+          Description: IPFS Gateway port
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ecs-sg'
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${AWS::StackName}-alb'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet1
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb'
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-tg'
+      Port: 8082
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-tg'
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # IAM Roles
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-task-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-task-execution-role'
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-task-role'
+
+  ECSInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ecs-instance-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ecs-instance-role'
+
+  ECSInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ECSInstanceRole
+
+  # CloudWatch Log Group
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}'
+      RetentionInDays: 7
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${AWS::StackName}-cluster'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: disabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-cluster'
+
+  # Launch Template for EC2 instances
+  ECSLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${AWS::StackName}-launch-template'
+      LaunchTemplateData:
+        ImageId: !FindInMap [AWSRegionToAMI, !Ref 'AWS::Region', AMIID]
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions:
+            MaxPrice: '0.005'
+            SpotInstanceType: one-time
+        IamInstanceProfile:
+          Arn: !GetAtt ECSInstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref ECSSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${AWS::StackName}-ecs-instance'
+
+  # Auto Scaling Group for EC2 instances
+  ECSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${AWS::StackName}-asg'
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ECSLaunchTemplate
+        Version: !GetAtt ECSLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinInstanceCount
+      MaxSize: !Ref MaxInstanceCount
+      DesiredCapacity: !Ref DesiredInstanceCount
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ecs-instance'
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT15M
+        WaitOnResourceSignals: true
+
+  # ECS Task Definition for Multi-Container Setup
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-task'
+      NetworkMode: bridge
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      Volumes:
+        - Name: postgres-data
+          EFSVolumeConfiguration:
+            FileSystemId: !Ref EFSFileSystem
+            RootDirectory: /postgres-data
+        - Name: ipfs-data
+          EFSVolumeConfiguration:
+            FileSystemId: !Ref EFSFileSystem
+            RootDirectory: /ipfs-data
+        - Name: uploads
+          EFSVolumeConfiguration:
+            FileSystemId: !Ref EFSFileSystem
+            RootDirectory: /uploads
+      ContainerDefinitions:
+        # PostgreSQL Database
+        - Name: db
+          Image: !Ref PostgresImage
+          Memory: 512
+          Cpu: 256
+          Essential: true
+          Environment:
+            - Name: POSTGRES_USER
+              Value: postgres
+            - Name: POSTGRES_PASSWORD
+              Value: mysecretpassword
+            - Name: POSTGRES_DB
+              Value: protchain
+          PortMappings:
+            - ContainerPort: 5432
+              Protocol: tcp
+          MountPoints:
+            - SourceVolume: postgres-data
+              ContainerPath: /var/lib/postgresql/data
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: postgres
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - pg_isready -U postgres
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+
+        # IPFS Node
+        - Name: ipfs
+          Image: !Ref IPFSImage
+          Memory: 512
+          Cpu: 256
+          Essential: true
+          Environment:
+            - Name: IPFS_PROFILE
+              Value: server
+          PortMappings:
+            - ContainerPort: 4001
+              Protocol: tcp
+            - ContainerPort: 5001
+              Protocol: tcp
+            - ContainerPort: 8080
+              Protocol: tcp
+          MountPoints:
+            - SourceVolume: ipfs-data
+              ContainerPath: /data/ipfs
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ipfs
+
+        # BioAPI Service
+        - Name: bioapi
+          Image: !Ref BioAPIImage
+          Memory: 512
+          Cpu: 256
+          Essential: true
+          Environment:
+            - Name: PYTHONUNBUFFERED
+              Value: "1"
+            - Name: UPLOAD_DIR
+              Value: /app/uploads
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          MountPoints:
+            - SourceVolume: uploads
+              ContainerPath: /app/uploads
+          DependsOn:
+            - ContainerName: db
+              Condition: HEALTHY
+            - ContainerName: ipfs
+              Condition: START
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: bioapi
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+
+        # ProtChain API Service
+        - Name: protchainapi
+          Image: !Ref ProtChainAPIImage
+          Memory: 512
+          Cpu: 256
+          Essential: true
+          Environment:
+            - Name: DATABASE_URL
+              Value: postgres://postgres:mysecretpassword@localhost:5432/protchain?sslmode=disable
+            - Name: ENVIRONMENT
+              Value: development
+            - Name: PORT
+              Value: "8082"
+            - Name: JWT_SECRET
+              Value: protchain_super_secret_key_for_testing_2024
+            - Name: BIOAPI_URL
+              Value: http://localhost:8000
+            - Name: IPFS_ENDPOINT
+              Value: http://localhost:5001
+            - Name: BLOCKCHAIN_RPC
+              Value: https://purechainnode.com:8547
+          PortMappings:
+            - ContainerPort: 8082
+              Protocol: tcp
+          DependsOn:
+            - ContainerName: db
+              Condition: HEALTHY
+            - ContainerName: bioapi
+              Condition: HEALTHY
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: protchainapi
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8082/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 90
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-task'
+
+  # ECS Service
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-service'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: EC2
+      LoadBalancers:
+        - ContainerName: protchainapi
+          ContainerPort: 8082
+          TargetGroupArn: !Ref ALBTargetGroup
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-service'
+
+  # Auto Scaling Target for ECS Service
+  ServiceScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: ECSService
+    Properties:
+      MaxCapacity: !Ref MaxCapacity
+      MinCapacity: !Ref MinCapacity
+      ResourceId: !Sub 'service/${ECSCluster}/${ECSService.Name}'
+      RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  # Auto Scaling Policy for ECS Service - CPU Utilization
+  ServiceScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-cpu-scaling-policy'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ServiceScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: 70.0
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+
+  # Auto Scaling Policy for EC2 instances
+  EC2ScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref ECSAutoScalingGroup
+      Cooldown: 300
+      ScalingAdjustment: 1
+      PolicyType: SimpleScaling
+
+  # CloudWatch Alarm for EC2 scaling
+  CPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-cpu-alarm'
+      AlarmDescription: Scale up on high CPU
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 70
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref ECSAutoScalingGroup
+      AlarmActions:
+        - !Ref EC2ScalingPolicy
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC-ID'
+
+  LoadBalancerURL:
+    Description: URL of the Application Load Balancer
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-URL'
+
+  ECSClusterName:
+    Description: Name of the ECS Cluster
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-ECS-Cluster'
+
+  ECSServiceName:
+    Description: Name of the ECS Service
+    Value: !GetAtt ECSService.Name
+    Export:
+      Name: !Sub '${AWS::StackName}-ECS-Service'
+
+  AutoScalingGroupName:
+    Description: Name of the Auto Scaling Group
+    Value: !Ref ECSAutoScalingGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ASG'
+
+  PrivateSubnet1:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub '${AWS::StackName}-Private-Subnet-1'

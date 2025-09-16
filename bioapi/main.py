@@ -136,6 +136,32 @@ async def analyze_binding_sites(request: BindingAnalysisRequest):
         print(f"Binding site analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Binding site analysis failed: {str(e)}")
 
+@app.post("/api/v1/structure/binding-sites/detect")
+async def detect_binding_sites(request: BindingAnalysisRequest):
+    """Direct binding site detection endpoint for Molstar viewer"""
+    try:
+        print(f"Real binding site detection for PDB ID: {request.pdb_id}")
+        
+        # Perform real geometric cavity detection
+        results = binding_detector.detect_binding_sites(request.pdb_id, request.structure_data)
+        
+        if not results:
+            print(f"No binding sites detected for {request.pdb_id}")
+            return {"binding_sites": [], "pdb_id": request.pdb_id, "method": "geometric_cavity_detection"}
+        
+        print(f"✅ Real binding site detection completed for {request.pdb_id}: {len(results)} sites found")
+        
+        return {
+            "binding_sites": results,
+            "pdb_id": request.pdb_id,
+            "method": "geometric_cavity_detection",
+            "total_sites": len(results)
+        }
+        
+    except Exception as e:
+        print(f"Real binding site detection error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Binding site detection failed: {str(e)}")
+
 @app.post("/api/v1/workflows/{workflow_id}/binding-sites")
 async def analyze_workflow_binding_sites(workflow_id: str, request: BindingAnalysisRequest):
     """Analyze binding sites for workflow"""

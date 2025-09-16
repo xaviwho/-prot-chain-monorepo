@@ -25,6 +25,7 @@
     "jsonwebtoken": "^9.0.2",
     "next": "15.1.5",
     "ngl": "^2.4.0",
+    "papaparse": "^5.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.172.0",
