@@ -13,9 +13,7 @@ services:
     restart: unless-stopped
 
   protchainapi:
-    build:
-      context: ./protchain
-      dockerfile: Dockerfile.prod
+    image: xaviwho/protchain:latest
     container_name: protchainapi
     environment:
       - DATABASE_URL=postgres://postgres:mysecretpassword@db:5432/protchain?sslmode=disable
@@ -32,9 +30,8 @@ services:
     restart: unless-stopped
 
   bioapi:
-    build:
-      context: ./bioapi
-      dockerfile: Dockerfile.prod
+    image: xaviwho/bioapi:latest
+    container_name: bioapi
     ports:
       - "8000:8000"
     volumes:
