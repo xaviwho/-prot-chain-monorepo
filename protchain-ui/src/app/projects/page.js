@@ -1,49 +1,37 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useWeb3React } from '@web3-react/core';
-import { ethers } from 'ethers';
-import DrugDiscoveryABI from '../../contracts/DrugDiscovery.json';
 import PDBViewer from '@/components/PDBViewer';
 
 export default function ProjectsDashboard() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
-  const { account, library } = useWeb3React();
-
-  const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_DRUG_DISCOVERY_CONTRACT;
 
   useEffect(() => {
     loadProjects();
-  }, [account]);
+  }, []);
 
   async function loadProjects() {
-    if (!account || !library) return;
 
     try {
-      const contract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        DrugDiscoveryABI,
-        library.getSigner()
-      );
-
-      const projectCount = await contract.projectCount();
-      const projectsData = [];
-
-      for (let i = 0; i < projectCount; i++) {
-        const project = await contract.getProject(i);
-        if (project.owner === account || project.isPublic) {
-          projectsData.push({
-            id: i,
-            ...project,
-            milestones: await contract.getProjectMilestones(i),
-            collaborators: await contract.getProjectCollaborators(i),
-          });
+      // TODO: Replace with actual API call to backend
+      // For now, using mock data since DrugDiscoveryABI was removed
+      const mockProjects = [
+        {
+          id: 1,
+          name: "Sample Drug Discovery Project",
+          description: "A sample project for demonstration",
+          targetProtein: "1ABC",
+          owner: "sample-user",
+          isPublic: true,
+          createdAt: Math.floor(Date.now() / 1000),
+          milestones: [],
+          collaborators: []
         }
-      }
+      ];
 
-      setProjects(projectsData);
+      setProjects(mockProjects);
     } catch (error) {
       console.error('Error loading projects:', error);
     } finally {
@@ -52,25 +40,25 @@ export default function ProjectsDashboard() {
   }
 
   async function createProject(data) {
-    if (!account || !library) return;
-
     try {
-      const contract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        DrugDiscoveryABI,
-        library.getSigner()
-      );
-
-      const tx = await contract.createProject(
-        data.name,
-        data.description,
-        data.targetProtein,
-        data.isPublic,
-        data.metadataHash
-      );
-
-      await tx.wait();
-      loadProjects();
+      // TODO: Replace with actual API call to backend
+      // For now, just logging the data since DrugDiscoveryABI was removed
+      console.log('Creating project with data:', data);
+      
+      // Simulate project creation
+      const newProject = {
+        id: projects.length + 1,
+        name: data.name,
+        description: data.description,
+        targetProtein: data.targetProtein,
+        owner: "sample-user",
+        isPublic: data.isPublic,
+        createdAt: Math.floor(Date.now() / 1000),
+        milestones: [],
+        collaborators: []
+      };
+      
+      setProjects([...projects, newProject]);
     } catch (error) {
       console.error('Error creating project:', error);
     }
