@@ -22,7 +22,7 @@ const nextConfig = {
       // This is the general proxy rule for all other /api/v1 calls.
       {
         source: '/api/v1/:path*',
-        destination: 'http://localhost:8082/api/v1/:path*',
+        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082'}/api/v1/:path*`,
       },
     ]
   },
