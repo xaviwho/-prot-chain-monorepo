@@ -50,7 +50,13 @@ export default function WorkflowDetailPage() {
   useEffect(() => {
     const fetchWorkflow = async () => {
       try {
-        const response = await fetch(`/api/workflows/${params.id}`);
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(`/api/v1/workflows/${params.id}`, { headers });
         if (!response.ok) {
           throw new Error(`Failed to fetch workflow: ${response.statusText}`);
         }

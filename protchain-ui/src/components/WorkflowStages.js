@@ -42,7 +42,13 @@ export default function WorkflowStages({
   useEffect(() => {
     const fetchWorkflowState = async () => {
       try {
-        const response = await fetch(`/api/workflows/${workflowId}`);
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(`/api/v1/workflows/${workflowId}`, { headers });
         if (response.ok) {
           const data = await response.json();
           setWorkflowData(data);
@@ -221,7 +227,13 @@ export default function WorkflowStages({
       
       // Refresh workflow state to update progress immediately
       try {
-        const workflowResponse = await fetch(`/api/workflows/${workflowId}`);
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+        
+        const workflowResponse = await fetch(`/api/v1/workflows/${workflowId}`, { headers });
         if (workflowResponse.ok) {
           const updatedWorkflowData = await workflowResponse.json();
           setWorkflowData(updatedWorkflowData);
@@ -324,7 +336,13 @@ export default function WorkflowStages({
       
       // Refresh workflow state to update progress immediately
       try {
-        const workflowResponse = await fetch(`/api/workflows/${workflowId}`);
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+        
+        const workflowResponse = await fetch(`/api/v1/workflows/${workflowId}`, { headers });
         if (workflowResponse.ok) {
           const updatedWorkflowData = await workflowResponse.json();
           setWorkflowData(updatedWorkflowData);
