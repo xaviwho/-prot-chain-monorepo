@@ -10,7 +10,8 @@ export async function POST(request, { params }) {
   
   try {
     // Call the backend API to start binding site analysis
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/workflows/${id}/binding-site-analysis`, {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/binding-site-analysis`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

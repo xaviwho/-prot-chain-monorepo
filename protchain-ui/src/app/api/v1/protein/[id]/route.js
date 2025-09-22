@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
-const BIOAPI_URL = process.env.NEXT_PUBLIC_BIOAPI_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
 const IPFS_API_URL = process.env.NEXT_PUBLIC_IPFS_API_URL || 'http://localhost:5001';
 const IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || 'http://localhost:8080';
 
@@ -50,8 +50,8 @@ export async function GET(request, context) {
         let publicationDate = 'N/A';
         
         try {
-            console.log(`[PROTEIN API] Calling BioAPI at ${BIOAPI_URL} for ${pdbId}`);
-            const bioApiResponse = await fetch(`${BIOAPI_URL}/api/v1/structure/workflows/ad-hoc-analysis/structure`, {
+            console.log(`[PROTEIN API] Calling API at ${API_URL} for ${pdbId}`);
+            const bioApiResponse = await fetch(`${API_URL}/api/v1/structure/workflows/ad-hoc-analysis/structure`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

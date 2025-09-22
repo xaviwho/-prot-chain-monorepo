@@ -10,7 +10,8 @@ export async function GET(request, { params }) {
   
   try {
     // Call the backend API to check if the workflow exists
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/workflows/${id}`, {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const response = await fetch(`${apiUrl}/api/v1/workflows/${id}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

@@ -7,10 +7,10 @@ export async function GET(request, { params }) {
   
   try {
     // First try the direct API approach
-    const bioApiUrl = 'http://localhost:8000';
-    console.log('Fetching workflow results from:', `${bioApiUrl}/api/v1/workflows/${id}/results`);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    console.log('Fetching workflow results from:', `${apiUrl}/api/v1/workflows/${id}/results`);
     
-    const response = await fetch(`${bioApiUrl}/api/v1/workflows/${id}/results`);
+    const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/results`);
     
     if (response.ok) {
       const data = await response.json();

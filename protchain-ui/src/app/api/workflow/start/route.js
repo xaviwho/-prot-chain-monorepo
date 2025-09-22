@@ -12,11 +12,11 @@ export async function POST(request) {
       body.template = 'amyloid_prediction.yaml';
     }
 
-    const bioApiUrl = 'http://localhost:8000';
-    console.log('Creating workflow at:', `${bioApiUrl}/api/v1/workflows`);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    console.log('Creating workflow at:', `${apiUrl}/api/v1/workflows`);
     
     // Call the bioapi endpoint
-    const res = await fetch(`${bioApiUrl}/api/v1/workflows`, {
+    const res = await fetch(`${apiUrl}/api/v1/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

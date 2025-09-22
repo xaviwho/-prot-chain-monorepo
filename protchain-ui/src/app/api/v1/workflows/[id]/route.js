@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
 
 export async function DELETE(request, { params }) {
   try {

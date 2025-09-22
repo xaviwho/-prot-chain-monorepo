@@ -91,7 +91,7 @@ export async function POST(request, { params }) {
     
     // Call the backend API to register the workflow
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
       const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/register`, {
         method: 'POST',
         headers: {

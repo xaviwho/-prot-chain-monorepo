@@ -64,7 +64,8 @@ export async function POST(request, { params }) {
     
     // Call REAL bioapi virtual screening
     console.log('Calling REAL bioapi virtual screening...');
-    const bioApiResponse = await fetch('http://localhost:8000/api/v1/screening/virtual-screening', {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const bioApiResponse = await fetch(`${apiUrl}/api/v1/screening/virtual-screening`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -138,7 +138,8 @@ export async function POST(request, { params }) {
     console.log(`Using WSL path: ${requestData.wsl_path}`);
     
     // Make the API call
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/direct-binding-analysis`, {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const response = await fetch(`${apiUrl}/api/v1/direct-binding-analysis`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

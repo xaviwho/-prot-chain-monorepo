@@ -181,7 +181,8 @@ export async function POST(request) {
 
     // Persist blockchain information to database
     try {
-      const updateResponse = await fetch(`http://localhost:8082/api/v1/workflows/${workflowId}/blockchain`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+      const updateResponse = await fetch(`${apiUrl}/api/v1/workflows/${workflowId}/blockchain`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

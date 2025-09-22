@@ -61,7 +61,8 @@ export async function GET(request, { params }) {
     
     // If no local results, try the backend API
     console.log('No local binding site results found, trying backend API...');
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/workflows/${id}/binding-sites`, {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/binding-sites`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

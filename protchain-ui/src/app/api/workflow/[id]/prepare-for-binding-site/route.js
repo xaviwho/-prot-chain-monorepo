@@ -96,7 +96,8 @@ export async function POST(request, { params }) {
     
     // Update the workflow in the backend
     console.log('Sending request to backend API...');
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/workflows/${id}`, {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const response = await fetch(`${apiUrl}/api/v1/workflows/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

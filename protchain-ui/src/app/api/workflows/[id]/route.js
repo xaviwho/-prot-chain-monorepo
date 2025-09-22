@@ -12,7 +12,8 @@ export async function GET(request, { params }) {
 
     // Try to get workflow data from the backend API first
     try {
-      const backendResponse = await fetch(`http://localhost:8082/api/v1/workflows/${id}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+      const backendResponse = await fetch(`${apiUrl}/api/v1/workflows/${id}`, {
         headers: {
           'Content-Type': 'application/json',
         },

@@ -4,7 +4,8 @@ export async function GET(request, { params }) {
   const { id } = params;
   
   try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/pdb/${id}`);
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+        const response = await fetch(`${apiUrl}/api/v1/pdb/${id}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch PDB file: ${response.statusText}`);

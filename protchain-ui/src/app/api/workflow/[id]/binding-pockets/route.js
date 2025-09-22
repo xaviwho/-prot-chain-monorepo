@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const BIOAPI_URL = process.env.NEXT_PUBLIC_BIOAPI_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
 
 export async function GET(request, { params }) {
     const { id } = params;
@@ -29,7 +29,7 @@ export async function GET(request, { params }) {
 
         // Step 2: Call BioAPI for real geometric cavity detection
         console.log(`Calling BioAPI for binding site detection...`);
-        const bioApiResponse = await fetch(`${BIOAPI_URL}/api/v1/structure/binding-sites/detect`, {
+        const response = await fetch(`${API_URL}/api/v1/structure/binding-sites/detect`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

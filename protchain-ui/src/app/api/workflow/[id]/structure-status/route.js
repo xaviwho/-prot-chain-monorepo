@@ -47,13 +47,13 @@ export async function GET(request, { params }) {
 
     // Only try bioapi status check if we have a valid bioapi workflow ID
     if (bioApiWorkflowId && bioApiWorkflowId !== id && bioApiWorkflowId !== 'undefined') {
-      const bioApiUrl = process.env.BIOAPI_URL || 'http://localhost:8000';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
       
       try {
-        console.log('Checking bioapi status:', `${bioApiUrl}/api/v1/workflows/${bioApiWorkflowId}/status`);
+        console.log('Checking bioapi status:', `${apiUrl}/api/v1/workflows/${bioApiWorkflowId}/status`);
         
         const response = await axios.get(
-          `${bioApiUrl}/api/v1/workflows/${bioApiWorkflowId}/status`,
+          `${apiUrl}/api/v1/workflows/${bioApiWorkflowId}/status`,
           {
             timeout: 5000
           }
@@ -71,7 +71,7 @@ export async function GET(request, { params }) {
           message: bioApiError.message,
           status: bioApiError.response?.status,
           statusText: bioApiError.response?.statusText,
-          url: `${bioApiUrl}/api/v1/structure/workflows/${bioApiWorkflowId}/status`
+          url: `${apiUrl}/api/v1/structure/workflows/${bioApiWorkflowId}/status`
         });
         
         // Fall back to local file checking if bioapi is unavailable

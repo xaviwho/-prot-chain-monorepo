@@ -38,7 +38,7 @@ export async function GET(request, { params }) {
             // Check if bioapi has generated structure processing results
             // The bioapi structure endpoint saves results to /app/core/config.upload_dir/structures/{workflow_id}/results.json
             // We need to check if this file exists and fetch it
-            const bioApiUrl = process.env.BIOAPI_URL || 'http://localhost:8000';
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
             
             try {
               // Try to fetch structure processing results directly from bioapi container
@@ -48,7 +48,7 @@ export async function GET(request, { params }) {
               // First, let's try to get the structure info to see if processing completed
               const structureInfoResponse = await axios({
                 method: 'get', 
-                url: `${bioApiUrl}/api/v1/workflows/${bioApiWorkflowId}/structure/info`,
+                url: `${apiUrl}/api/v1/workflows/${bioApiWorkflowId}/structure/info`,
                 headers: { 'Content-Type': 'application/json' },
                 timeout: 30000
               });

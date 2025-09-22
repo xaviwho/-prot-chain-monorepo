@@ -32,7 +32,8 @@ export async function GET(request) {
     
     try {
       // Fetch real workflow count from backend
-      workflowResponse = await fetch(`http://localhost:8082/api/v1/workflows`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+      workflowResponse = await fetch(`${apiUrl}/api/v1/workflows`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -65,7 +66,7 @@ export async function GET(request) {
       
       // Fetch organization/team data for collaborations
       try {
-        const orgResponse = await fetch(`http://localhost:8082/api/v1/teams/organizations`, {
+        const orgResponse = await fetch(`${apiUrl}/api/v1/teams/organizations`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',

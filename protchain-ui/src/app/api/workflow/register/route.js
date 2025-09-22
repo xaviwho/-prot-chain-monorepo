@@ -124,7 +124,8 @@ export async function POST(request) {
     console.log(JSON.stringify(workflowData, null, 2));
     
     // Register the workflow with the backend
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/workflows`, {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const response = await fetch(`${apiUrl}/api/v1/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

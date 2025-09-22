@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    const bioApiUrl = 'http://localhost:8000';
-    console.log('Fetching workflows from:', `${bioApiUrl}/api/v1/workflows/templates`);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    console.log('Fetching workflows from:', `${apiUrl}/api/v1/workflows/templates`);
 
     // Call the bioapi endpoint
-    const res = await fetch(`${bioApiUrl}/api/v1/workflows/templates`, {
+    const res = await fetch(`${apiUrl}/api/v1/workflows/templates`, {
       headers: {
         'Content-Type': 'application/json',
       },

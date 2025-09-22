@@ -10,11 +10,11 @@ export async function GET(request, { params }) {
   
   try {
     // First try to fetch from backend
-    const bioApiUrl = 'http://localhost:8000';
-    console.log('Fetching workflow status from:', `${bioApiUrl}/api/v1/workflows/${id}/status`);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    console.log('Fetching workflow status from:', `${apiUrl}/api/v1/workflows/${id}/status`);
     
     try {
-      const response = await fetch(`${bioApiUrl}/api/v1/workflows/${id}/status`);
+      const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/status`);
       
       if (response.ok) {
         const data = await response.json();

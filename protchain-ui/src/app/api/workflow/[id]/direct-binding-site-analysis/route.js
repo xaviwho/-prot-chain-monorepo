@@ -96,7 +96,8 @@ export async function POST(request, { params }) {
     let bioApiResult;
     
     try {
-      bioApiResponse = await fetch('http://localhost:8000/api/v1/binding/direct-binding-analysis', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+      bioApiResponse = await fetch(`${apiUrl}/api/v1/binding/direct-binding-analysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

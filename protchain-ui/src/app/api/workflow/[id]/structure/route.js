@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // The bioapi service URL, should be in an env var but hardcoded for now
-const BIOAPI_URL = process.env.BIOAPI_URL || 'http://bioapi:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
 
 export async function POST(request, { params }) {
   const { id: workflowId } = await params;
@@ -57,7 +57,7 @@ export async function POST(request, { params }) {
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const url = `${BIOAPI_URL}/api/v1/workflows/${encodeURIComponent(workflowId)}/structure`;
+    const url = `${API_URL}/api/v1/workflows/${encodeURIComponent(workflowId)}/structure`;
     const backendResponse = await fetch(url, {
       method: 'POST',
       headers: {
