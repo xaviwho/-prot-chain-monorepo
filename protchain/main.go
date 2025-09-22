@@ -12,7 +12,6 @@ import (
 	"protchain/internal/middleware"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/cors"
 )
 
 func main() {
@@ -44,16 +43,42 @@ func main() {
 	// Create router
 	router := gin.Default()
 
-	// Setup CORS
-	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "https://*.protchain.bio", "https://protchain.bio"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
-		AllowCredentials: true,
-	})
-	router.Use(func(ctx *gin.Context) {
-		c.HandlerFunc(ctx.Writer, ctx.Request)
-		ctx.Next()
+	// Setup CORS middleware
+	router.Use(func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		
+		// Allow specific origins
+		allowedOrigins := []string{
+			"http://localhost:3000",
+			"https://protchain.bio",
+			"https://protchain.co",
+			"https://prot-chain-monorepo-gqv.onrender.com",
+		}
+		
+		// Check if origin is allowed
+		allowed := false
+		for _, allowedOrigin := range allowedOrigins {
+			if origin == allowedOrigin {
+				allowed = true
+				break
+			}
+		}
+		
+		if allowed {
+			c.Header("Access-Control-Allow-Origin", origin)
+		}
+		
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Source, X-Request-ID")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		
+		// Handle preflight requests
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		
+		c.Next()
 	})
 
 	// Health check endpoint
@@ -148,7 +173,7 @@ func main() {
 	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8082"  // Default to 8082 to match frontend expectations
 	}
 
 	log.Printf("Starting ProtChain API server on port %s", port)

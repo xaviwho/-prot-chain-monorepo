@@ -23,7 +23,7 @@ yarn-error.log*
 /out/
 
 # Ignore local env files
-.env*.local
+# .env*.local
 
 # Ignore mangled path directories
 C??Users?*
