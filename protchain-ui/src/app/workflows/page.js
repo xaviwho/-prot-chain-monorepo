@@ -289,7 +289,7 @@ export default function WorkflowsPage() {
 
       if (!response.ok) {
         // TODO: REMOVE
-        console.log(response)
+        console.log(`response is ${response}`)
         let detail = 'Failed to create workflow';
         try {
           const data = await response.json();
