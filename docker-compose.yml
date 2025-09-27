@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:13
+    container_name: protchain-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: protchain
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  protchainapi:
+    image: xaviwho/protchain:latest
+    container_name: protchainapi
+    environment:
+      - DATABASE_URL=postgres://postgres:mysecretpassword@db:5432/protchain?sslmode=disable
+      - ENVIRONMENT=development
+      - PORT=8082
+      - JWT_SECRET=protchain_super_secret_key_for_testing_2024
+      - BIOAPI_URL=http://bioapi:8000
+      - IPFS_ENDPOINT=http://ipfs:5001
+      - BLOCKCHAIN_RPC=https://purechainnode.com:8547
+    ports:
+      - "8082:8082"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  bioapi:
+    image: xaviwho/bioapi:latest
+    container_name: bioapi
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+    environment:
+      - PYTHONUNBUFFERED=1
+      - UPLOAD_DIR=/app/uploads
+    depends_on:
+      - db
+      - ipfs
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: ipfs
+    ports:
+      - "4001:4001"  # P2P port
+      - "5001:5001"  # API port
+      - "8080:8080"  # Gateway port
+    volumes:
+      - ipfs_data:/data/ipfs
+      - ipfs_staging:/export
+    environment:
+      - IPFS_PROFILE=server
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ipfs_data:
+  ipfs_staging:

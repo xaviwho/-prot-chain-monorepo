@@ -44,10 +44,13 @@ function generateToken(userData) {
 
 export async function POST(request) {
   try {
-    const { name, email, password } = await request.json();
+    const { name, first_name, last_name, email, password } = await request.json();
+    
+    // Handle both name formats for backward compatibility
+    const fullName = name || `${first_name || ''} ${last_name || ''}`.trim();
     
     // Validate input
-    if (!name || !email || !password) {
+    if (!fullName || !email || !password) {
       return NextResponse.json({
         status: 'error',
         message: 'Name, email, and password are required'
@@ -77,7 +80,7 @@ export async function POST(request) {
     // Create new user with ID
     const newUser = {
       id: userId,
-      name,
+      name: fullName,
       email,
       password: hashedPassword,
       createdAt: new Date().toISOString()

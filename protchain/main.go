@@ -122,6 +122,26 @@ func main() {
 			workflows.DELETE("/:id", workflowHandler.DeleteWorkflow)
 			workflows.PUT("/:id/blockchain", workflowHandler.UpdateWorkflowBlockchainInfo)
 			workflows.GET("/:id/pdb", workflowHandler.GetWorkflowPDB)
+			
+			// New workflow processing endpoints
+			workflows.GET("/:id/status", workflowHandler.GetWorkflowStatus)
+			workflows.GET("/:id/results", workflowHandler.GetWorkflowResults)
+			workflows.POST("/:id/register", workflowHandler.RegisterWorkflow)
+			workflows.GET("/:id/binding-sites", workflowHandler.GetWorkflowBindingSites)
+			workflows.POST("/:id/binding-site-analysis", workflowHandler.StartBindingSiteAnalysis)
+			workflows.POST("/:id/structure", workflowHandler.ProcessStructure)
+			workflows.GET("/templates", workflowHandler.GetWorkflowTemplates)
+		}
+
+		// Bioinformatics processing routes
+		screening := protected.Group("/screening")
+		{
+			screening.POST("/virtual-screening", workflowHandler.VirtualScreening)
+		}
+
+		binding := protected.Group("/binding")
+		{
+			binding.POST("/direct-binding-analysis", workflowHandler.DirectBindingAnalysis)
 		}
 
 		// Team management routes

@@ -355,3 +355,341 @@ func (h *WorkflowHandler) GetWorkflowPDB(c *gin.Context) {
 		Error:   "No PDB data stored for this workflow",
 	})
 }
+
+// GetWorkflowStatus returns the current status of a workflow
+func (h *WorkflowHandler) GetWorkflowStatus(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	workflowID := c.Param("id")
+
+	var workflow models.Workflow
+	err := h.db.QueryRow(`
+		SELECT id, user_id, name, description, status, results, created_at, updated_at
+		FROM workflows 
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID).Scan(
+		&workflow.ID, &workflow.UserID, &workflow.Name, &workflow.Description,
+		&workflow.Status, &workflow.Results, &workflow.CreatedAt, &workflow.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "Workflow not found",
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to fetch workflow status",
+		})
+		return
+	}
+
+	// Return status information
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"status":  workflow.Status,
+		"message": fmt.Sprintf("Workflow %s is %s", workflow.Name, workflow.Status),
+		"workflow": gin.H{
+			"id":          workflow.ID,
+			"name":        workflow.Name,
+			"description": workflow.Description,
+			"status":      workflow.Status,
+			"updated_at":  workflow.UpdatedAt,
+		},
+	})
+}
+
+// GetWorkflowResults returns the results of a workflow
+func (h *WorkflowHandler) GetWorkflowResults(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	workflowID := c.Param("id")
+
+	var workflow models.Workflow
+	err := h.db.QueryRow(`
+		SELECT id, user_id, name, description, status, results, created_at, updated_at
+		FROM workflows 
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID).Scan(
+		&workflow.ID, &workflow.UserID, &workflow.Name, &workflow.Description,
+		&workflow.Status, &workflow.Results, &workflow.CreatedAt, &workflow.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "Workflow not found",
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to fetch workflow results",
+		})
+		return
+	}
+
+	// Parse results JSON if available
+	if !workflow.Results.Valid || workflow.Results.String == "" {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "No results available for this workflow",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"results": workflow.Results.String,
+		"workflow": gin.H{
+			"id":     workflow.ID,
+			"name":   workflow.Name,
+			"status": workflow.Status,
+		},
+	})
+}
+
+// RegisterWorkflow registers a workflow for processing
+func (h *WorkflowHandler) RegisterWorkflow(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	workflowID := c.Param("id")
+
+	var req struct {
+		WorkflowID string `json:"workflow_id"`
+		Path       string `json:"path"`
+		WSLPath    string `json:"wsl_path"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Success: false,
+			Error:   "Invalid request format",
+		})
+		return
+	}
+
+	// Update workflow status to registered
+	_, err := h.db.Exec(`
+		UPDATE workflows 
+		SET status = 'registered', updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to register workflow",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Workflow registered successfully",
+		"workflow_id": workflowID,
+		"status": "registered",
+	})
+}
+
+// StartBindingSiteAnalysis starts binding site analysis for a workflow
+func (h *WorkflowHandler) StartBindingSiteAnalysis(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	workflowID := c.Param("id")
+
+	// Verify workflow exists and belongs to user
+	var workflow models.Workflow
+	err := h.db.QueryRow(`
+		SELECT id, status FROM workflows 
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID).Scan(&workflow.ID, &workflow.Status)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "Workflow not found",
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to access workflow",
+		})
+		return
+	}
+
+	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
+		Success: false,
+		Error:   "Binding site analysis service not implemented. Please configure bioinformatics processing pipeline.",
+	})
+}
+
+// ProcessStructure processes protein structure for a workflow
+func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	workflowID := c.Param("id")
+
+	var req struct {
+		PDBContent string `json:"pdb_content"`
+		ProteinID  string `json:"protein_id"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Success: false,
+			Error:   "Invalid request format",
+		})
+		return
+	}
+
+	// Verify workflow exists and belongs to user
+	var workflow models.Workflow
+	err := h.db.QueryRow(`
+		SELECT id, status FROM workflows 
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID).Scan(&workflow.ID, &workflow.Status)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "Workflow not found",
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to access workflow",
+		})
+		return
+	}
+
+	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
+		Success: false,
+		Error:   "Structure processing service not implemented. Please configure bioinformatics processing pipeline.",
+	})
+}
+
+// GetWorkflowBindingSites returns binding sites for a workflow
+func (h *WorkflowHandler) GetWorkflowBindingSites(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	workflowID := c.Param("id")
+
+	var workflow models.Workflow
+	err := h.db.QueryRow(`
+		SELECT id, user_id, name, results
+		FROM workflows 
+		WHERE id = $1 AND user_id = $2
+	`, workflowID, userID).Scan(
+		&workflow.ID, &workflow.UserID, &workflow.Name, &workflow.Results,
+	)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "Workflow not found",
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to fetch binding sites",
+		})
+		return
+	}
+
+	// Parse binding sites from workflow results
+	if !workflow.Results.Valid || workflow.Results.String == "" {
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Success: false,
+			Error:   "No binding site analysis results available for this workflow",
+		})
+		return
+	}
+
+	// Return the actual results from the database
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"results": workflow.Results.String,
+		"workflow_id": workflowID,
+	})
+}
+
+// GetWorkflowTemplates returns available workflow templates
+func (h *WorkflowHandler) GetWorkflowTemplates(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
+		Success: false,
+		Error:   "Workflow templates service not implemented. Please configure template management system.",
+	})
+}
+
+// VirtualScreening performs virtual screening for drug discovery
+func (h *WorkflowHandler) VirtualScreening(c *gin.Context) {
+	var req struct {
+		WorkflowID       string `json:"workflow_id"`
+		BindingSite      interface{} `json:"binding_site"`
+		PDBContent       string `json:"pdb_content"`
+		CompoundLibrary  string `json:"compound_library"`
+		MaxCompounds     int    `json:"max_compounds"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Success: false,
+			Error:   "Invalid request format",
+		})
+		return
+	}
+
+	// Validate required fields
+	if req.WorkflowID == "" || req.PDBContent == "" {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Success: false,
+			Error:   "Missing required fields: workflow_id and pdb_content are required",
+		})
+		return
+	}
+
+	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
+		Success: false,
+		Error:   "Virtual screening service not implemented. Please configure molecular docking and compound screening pipeline.",
+	})
+}
+
+// DirectBindingAnalysis performs direct binding site analysis
+func (h *WorkflowHandler) DirectBindingAnalysis(c *gin.Context) {
+	var req struct {
+		PDBID         string `json:"pdb_id"`
+		StructureData string `json:"structure_data"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Success: false,
+			Error:   "Invalid request format",
+		})
+		return
+	}
+
+	// Validate required fields
+	if req.StructureData == "" {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Success: false,
+			Error:   "Missing required field: structure_data is required",
+		})
+		return
+	}
+
+	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
+		Success: false,
+		Error:   "Direct binding analysis service not implemented. Please configure geometric cavity detection and druggability analysis pipeline.",
+	})
+}

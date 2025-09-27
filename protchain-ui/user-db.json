@@ -6,6 +6,13 @@
       "email": "Xavierkanu@yahoo.com",
       "password": "e91fd65e715d4cd93e5c5955316764af7685ed8a74ce38de2e83481dd2e394e8",
       "createdAt": "2025-04-16T03:51:15.229Z"
+    },
+    "johndoe@gmail.com": {
+      "id": "1758976945261",
+      "name": "John Doe",
+      "email": "johndoe@gmail.com",
+      "password": "df7e4733b74757421638c4687deb704c9b5e9ea825e2743276eaa5c13968ca6f",
+      "createdAt": "2025-09-27T12:42:25.261Z"
     }
   }
 }
