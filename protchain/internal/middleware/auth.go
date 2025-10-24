@@ -11,8 +11,18 @@ import (
 
 func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		log.Printf("AuthMiddleware: Processing request to %s %s", c.Request.Method, c.Request.URL.Path)
+		secretPreview := jwtSecret
+		if len(jwtSecret) > 10 {
+			secretPreview = jwtSecret[:10] + "..."
+		}
+		log.Printf("AuthMiddleware: Using JWT secret: %s", secretPreview)
+		
 		authHeader := c.GetHeader("Authorization")
+		log.Printf("AuthMiddleware: Authorization header: %s", authHeader)
+		
 		if authHeader == "" {
+			log.Printf("AuthMiddleware: No Authorization header found")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
 			c.Abort()
 			return
@@ -20,10 +30,17 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
+			log.Printf("AuthMiddleware: Invalid Bearer token format")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Bearer token required"})
 			c.Abort()
 			return
 		}
+		
+		tokenPreview := tokenString
+		if len(tokenString) > 20 {
+			tokenPreview = tokenString[:20] + "..."
+		}
+		log.Printf("AuthMiddleware: Token string: %s", tokenPreview)
 
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {

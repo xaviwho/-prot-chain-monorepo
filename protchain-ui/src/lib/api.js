@@ -41,7 +41,7 @@ apiClient.interceptors.request.use((config) => {
 
 export const authenticateUser = async (email, password) => {
     try {
-        const response = await fetch('/api/auth/login', {
+        const response = await fetch('/api/v1/auth/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -56,7 +56,7 @@ export const authenticateUser = async (email, password) => {
             throw new Error(message);
         }
 
-        const token = body?.payload?.token;
+        const token = body?.data?.token;
         if (token) {
             if (!isValidJWT(token)) {
                 console.error('Invalid JWT format received from server');
@@ -88,7 +88,7 @@ export const registerUser = async (name, email, password) => {
             last_name = parts.join(' ');
         }
 
-        const response = await fetch('/api/auth/register', {
+        const response = await fetch('/api/v1/auth/register', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -102,7 +102,7 @@ export const registerUser = async (name, email, password) => {
             throw new Error(message);
         }
 
-        const token = body?.payload?.token;
+        const token = body?.data?.token;
         if (token) {
             if (!isValidJWT(token)) {
                 console.error('Invalid JWT format received from server');

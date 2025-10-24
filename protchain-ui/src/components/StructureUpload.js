@@ -43,9 +43,17 @@ export default function StructureUpload({ onUploadComplete, workflowId }) {
     formData.append('file', file);
 
     try {
+      // Get the auth token
+      const token = localStorage.getItem('token');
+      const headers = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       // Upload the structure file and get immediate results
       const response = await fetch(`/api/workflow/${workflowId}/structure`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
@@ -94,13 +102,20 @@ export default function StructureUpload({ onUploadComplete, workflowId }) {
         throw new Error('Failed to fetch protein data. Please check the PDB ID and try again.');
       }
 
+      // Get the auth token
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       // Send PDB ID directly to backend (no file upload needed)
       // Backend will fetch the real PDB file from RCSB database
       const uploadResponse = await fetch(`/api/workflow/${workflowId}/structure`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           pdbId: pdbId.trim().toUpperCase()
         }),

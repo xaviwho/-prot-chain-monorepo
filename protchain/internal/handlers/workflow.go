@@ -162,14 +162,34 @@ func (h *WorkflowHandler) GetWorkflow(c *gin.Context) {
 	workflowID := c.Param("id")
 
 	var w models.Workflow
+	var description, results, blockchainTxHash, ipfsHash sql.NullString
+	var blockchainCommittedAt sql.NullTime
+	
 	err := h.db.QueryRow(`
 		SELECT id, name, description, status, results, blockchain_tx_hash, ipfs_hash,
 		       blockchain_committed_at, created_at, updated_at
 		FROM workflows 
 		WHERE id = $1 AND user_id = $2
-	`, workflowID, userID).Scan(&w.ID, &w.Name, &w.Description, &w.Status, &w.Results,
-		&w.BlockchainTxHash, &w.IPFSHash, &w.BlockchainCommittedAt,
+	`, workflowID, userID).Scan(&w.ID, &w.Name, &description, &w.Status, &results,
+		&blockchainTxHash, &ipfsHash, &blockchainCommittedAt,
 		&w.CreatedAt, &w.UpdatedAt)
+	
+	// Convert sql.NullString to *string
+	if description.Valid {
+		w.Description = &description.String
+	}
+	if results.Valid {
+		w.Results = &results.String
+	}
+	if blockchainTxHash.Valid {
+		w.BlockchainTxHash = &blockchainTxHash.String
+	}
+	if ipfsHash.Valid {
+		w.IPFSHash = &ipfsHash.String
+	}
+	if blockchainCommittedAt.Valid {
+		w.BlockchainCommittedAt = &blockchainCommittedAt.Time
+	}
 
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{
@@ -187,14 +207,24 @@ func (h *WorkflowHandler) GetWorkflow(c *gin.Context) {
 		return
 	}
 
+	// Handle pointer fields safely for response
+	descriptionStr := ""
+	if w.Description != nil {
+		descriptionStr = *w.Description
+	}
+	resultsStr := ""
+	if w.Results != nil {
+		resultsStr = *w.Results
+	}
+
 	c.JSON(http.StatusOK, dto.SuccessResponse{
 		Success: true,
 		Data: dto.WorkflowResponse{
 			ID:                    w.ID,
 			Name:                  w.Name,
-			Description:           *w.Description,
+			Description:           descriptionStr,
 			Status:                w.Status,
-			Results:               *w.Results,
+			Results:               resultsStr,
 			BlockchainTxHash:      w.BlockchainTxHash,
 			IPFSHash:              w.IPFSHash,
 			BlockchainCommittedAt: w.BlockchainCommittedAt,
@@ -362,14 +392,24 @@ func (h *WorkflowHandler) GetWorkflowStatus(c *gin.Context) {
 	workflowID := c.Param("id")
 
 	var workflow models.Workflow
+	var description, results sql.NullString
+	
 	err := h.db.QueryRow(`
 		SELECT id, user_id, name, description, status, results, created_at, updated_at
 		FROM workflows 
 		WHERE id = $1 AND user_id = $2
 	`, workflowID, userID).Scan(
-		&workflow.ID, &workflow.UserID, &workflow.Name, &workflow.Description,
-		&workflow.Status, &workflow.Results, &workflow.CreatedAt, &workflow.UpdatedAt,
+		&workflow.ID, &workflow.UserID, &workflow.Name, &description,
+		&workflow.Status, &results, &workflow.CreatedAt, &workflow.UpdatedAt,
 	)
+
+	// Convert sql.NullString to *string
+	if description.Valid {
+		workflow.Description = &description.String
+	}
+	if results.Valid {
+		workflow.Results = &results.String
+	}
 
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{
@@ -408,14 +448,24 @@ func (h *WorkflowHandler) GetWorkflowResults(c *gin.Context) {
 	workflowID := c.Param("id")
 
 	var workflow models.Workflow
+	var description, results sql.NullString
+	
 	err := h.db.QueryRow(`
 		SELECT id, user_id, name, description, status, results, created_at, updated_at
 		FROM workflows 
 		WHERE id = $1 AND user_id = $2
 	`, workflowID, userID).Scan(
-		&workflow.ID, &workflow.UserID, &workflow.Name, &workflow.Description,
-		&workflow.Status, &workflow.Results, &workflow.CreatedAt, &workflow.UpdatedAt,
+		&workflow.ID, &workflow.UserID, &workflow.Name, &description,
+		&workflow.Status, &results, &workflow.CreatedAt, &workflow.UpdatedAt,
 	)
+
+	// Convert sql.NullString to *string
+	if description.Valid {
+		workflow.Description = &description.String
+	}
+	if results.Valid {
+		workflow.Results = &results.String
+	}
 
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{
@@ -434,7 +484,12 @@ func (h *WorkflowHandler) GetWorkflowResults(c *gin.Context) {
 	}
 
 	// Parse results JSON if available
-	if !workflow.Results.Valid || workflow.Results.String == "" {
+	resultsStr := ""
+	if workflow.Results != nil {
+		resultsStr = *workflow.Results
+	}
+
+	if resultsStr == "" {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{
 			Success: false,
 			Error:   "No results available for this workflow",
@@ -444,7 +499,7 @@ func (h *WorkflowHandler) GetWorkflowResults(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"results": workflow.Results.String,
+		"results": resultsStr,
 		"workflow": gin.H{
 			"id":     workflow.ID,
 			"name":   workflow.Name,
@@ -531,7 +586,14 @@ func (h *WorkflowHandler) StartBindingSiteAnalysis(c *gin.Context) {
 
 // ProcessStructure processes protein structure for a workflow
 func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Success: false,
+			Error:   "User not authenticated",
+		})
+		return
+	}
 	workflowID := c.Param("id")
 
 	var req struct {
@@ -582,13 +644,20 @@ func (h *WorkflowHandler) GetWorkflowBindingSites(c *gin.Context) {
 	workflowID := c.Param("id")
 
 	var workflow models.Workflow
+	var results sql.NullString
+	
 	err := h.db.QueryRow(`
 		SELECT id, user_id, name, results
 		FROM workflows 
 		WHERE id = $1 AND user_id = $2
 	`, workflowID, userID).Scan(
-		&workflow.ID, &workflow.UserID, &workflow.Name, &workflow.Results,
+		&workflow.ID, &workflow.UserID, &workflow.Name, &results,
 	)
+
+	// Convert sql.NullString to *string
+	if results.Valid {
+		workflow.Results = &results.String
+	}
 
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{
@@ -607,7 +676,12 @@ func (h *WorkflowHandler) GetWorkflowBindingSites(c *gin.Context) {
 	}
 
 	// Parse binding sites from workflow results
-	if !workflow.Results.Valid || workflow.Results.String == "" {
+	resultsStr := ""
+	if workflow.Results != nil {
+		resultsStr = *workflow.Results
+	}
+
+	if resultsStr == "" {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{
 			Success: false,
 			Error:   "No binding site analysis results available for this workflow",
@@ -618,7 +692,7 @@ func (h *WorkflowHandler) GetWorkflowBindingSites(c *gin.Context) {
 	// Return the actual results from the database
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"results": workflow.Results.String,
+		"results": resultsStr,
 		"workflow_id": workflowID,
 	})
 }

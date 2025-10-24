@@ -13,7 +13,9 @@ services:
     restart: unless-stopped
 
   protchainapi:
-    image: xaviwho/protchain:latest
+    build:
+      context: ./protchain
+      dockerfile: Dockerfile.prod
     container_name: protchainapi
     environment:
       - DATABASE_URL=postgres://postgres:mysecretpassword@db:5432/protchain?sslmode=disable

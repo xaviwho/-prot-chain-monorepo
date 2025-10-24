@@ -20,7 +20,9 @@ export default function LoginPage() {
 
     try {
       await authenticateUser(email, password);
-      router.push('/workflows');
+      
+      // Force a page refresh to update navigation state and redirect to workflows
+      window.location.href = '/workflows';
     } catch (err) {
       setError(err.message || 'Invalid email or password');
     } finally {

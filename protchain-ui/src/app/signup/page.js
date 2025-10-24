@@ -28,7 +28,9 @@ export default function SignUpPage() {
 
     try {
       await registerUser(name, email, password);
-      router.push('/workflows');
+      
+      // Force a page refresh to update navigation state and redirect to workflows
+      window.location.href = '/workflows';
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
     } finally {
