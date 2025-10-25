@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"database/sql"
-	"net/http"
-
-	"time"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"protchain/internal/dto"
 	"protchain/internal/models"
@@ -599,12 +602,28 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 	var req struct {
 		PDBContent string `json:"pdb_content"`
 		ProteinID  string `json:"protein_id"`
+		PDBId      string `json:"pdbId"`
+		Stage      string `json:"stage"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
 			Success: false,
 			Error:   "Invalid request format",
+		})
+		return
+	}
+
+	// Use PDBId if provided (from frontend), otherwise use ProteinID
+	pdbId := req.PDBId
+	if pdbId == "" {
+		pdbId = req.ProteinID
+	}
+
+	if pdbId == "" {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Success: false,
+			Error:   "PDB ID is required",
 		})
 		return
 	}
@@ -632,9 +651,130 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
-		Success: false,
-		Error:   "Structure processing service not implemented. Please configure bioinformatics processing pipeline.",
+	// Call BioAPI service for structure processing
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	fmt.Printf("ProcessStructure: Using BioAPI URL: %s\n", bioapiURL)
+	fmt.Printf("ProcessStructure: Processing PDB ID: %s\n", pdbId)
+
+	// Prepare request for BioAPI - match the StructureRequest schema
+	bioapiReq := map[string]interface{}{
+		"pdb_id": pdbId,
+		"structure_data": nil, // Optional field, can be null
+	}
+
+	reqBody, err := json.Marshal(bioapiReq)
+	if err != nil {
+		fmt.Printf("ProcessStructure: Failed to marshal request: %v\n", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to prepare structure processing request",
+		})
+		return
+	}
+
+	fmt.Printf("ProcessStructure: Request body: %s\n", string(reqBody))
+
+	// First check if BioAPI service is running
+	healthResp, err := http.Get(bioapiURL + "/health")
+	if err != nil {
+		fmt.Printf("ProcessStructure: BioAPI health check failed: %v\n", err)
+	} else {
+		healthResp.Body.Close()
+		fmt.Printf("ProcessStructure: BioAPI health check status: %d\n", healthResp.StatusCode)
+	}
+
+	// Make request to BioAPI - use the correct endpoint from OpenAPI spec
+	endpoint := fmt.Sprintf("%s/api/v1/workflows/%s/structure", bioapiURL, workflowID)
+	fmt.Printf("ProcessStructure: Calling endpoint: %s\n", endpoint)
+	
+	resp, err := http.Post(
+		endpoint,
+		"application/json",
+		strings.NewReader(string(reqBody)),
+	)
+	if err != nil {
+		fmt.Printf("ProcessStructure: HTTP request failed: %v\n", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to connect to structure processing service: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	fmt.Printf("ProcessStructure: BioAPI response status: %d\n", resp.StatusCode)
+
+	// Read BioAPI response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("ProcessStructure: Failed to read response body: %v\n", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to read structure processing response",
+		})
+		return
+	}
+
+	fmt.Printf("ProcessStructure: Response body: %s\n", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("ProcessStructure: BioAPI error - Status: %d, Body: %s\n", resp.StatusCode, string(body))
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   fmt.Sprintf("Structure processing service error (Status %d): %s", resp.StatusCode, string(body)),
+		})
+		return
+	}
+
+	// Parse BioAPI response
+	var bioapiResponse map[string]interface{}
+	if err := json.Unmarshal(body, &bioapiResponse); err != nil {
+		fmt.Printf("ProcessStructure: Failed to parse response: %v\n", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to parse structure processing response: " + err.Error(),
+		})
+		return
+	}
+
+	// Update workflow with results
+	resultsJSON, err := json.Marshal(bioapiResponse)
+	if err != nil {
+		fmt.Printf("ProcessStructure: Failed to serialize results: %v\n", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to serialize results",
+		})
+		return
+	}
+
+	fmt.Printf("ProcessStructure: Updating workflow %s with results\n", workflowID)
+
+	_, err = h.db.Exec(`
+		UPDATE workflows 
+		SET results = $1, status = 'structure_processed', updated_at = NOW()
+		WHERE id = $2 AND user_id = $3
+	`, string(resultsJSON), workflowID, userID)
+
+	if err != nil {
+		fmt.Printf("ProcessStructure: Database update failed: %v\n", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to update workflow with results: " + err.Error(),
+		})
+		return
+	}
+
+	fmt.Printf("ProcessStructure: Successfully processed structure for PDB ID: %s\n", pdbId)
+
+	// Return success response with results
+	c.JSON(http.StatusOK, dto.SuccessResponse{
+		Success: true,
+		Data:    bioapiResponse,
 	})
 }
 

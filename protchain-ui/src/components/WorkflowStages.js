@@ -204,11 +204,18 @@ export default function WorkflowStages({
     try {
       console.log('Processing structure for PDB ID:', pdbId);
       
+      // Get the auth token
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`/api/workflow/${workflowId}/structure`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           pdbId: pdbId.trim(),
           stage: 'structure_preparation'
@@ -273,11 +280,18 @@ export default function WorkflowStages({
     try {
       console.log('Starting binding site analysis for workflow:', workflowId);
       
+      // Get the auth token
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`/api/workflow/${workflowId}/direct-binding-site-analysis`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           stage: 'binding_site_analysis'
         }),
@@ -313,11 +327,18 @@ export default function WorkflowStages({
     try {
       console.log('Starting REAL virtual screening for workflow:', workflowId);
       
+      // Get the auth token
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`/api/workflow/${workflowId}/virtual-screening`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           compound_library: 'fda_approved',
           max_compounds: 50

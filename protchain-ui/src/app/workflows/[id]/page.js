@@ -60,15 +60,20 @@ export default function WorkflowDetailPage() {
         if (!response.ok) {
           throw new Error(`Failed to fetch workflow: ${response.statusText}`);
         }
-        const data = await response.json();
-        setWorkflow(data);
-        setStage(data.stage || 'structure_preparation');
+        const responseData = await response.json();
+        
+        // Handle different response structures
+        const workflowData = responseData.data || responseData;
+        console.log('Fetched workflow data:', workflowData);
+        
+        setWorkflow(workflowData);
+        setStage(workflowData.stage || 'structure_preparation');
         
         // Extract protein info from workflow name or description
-        const proteinName = extractProteinName(data.name);
+        const proteinName = extractProteinName(workflowData.name);
         setProteinInfo({
           name: proteinName,
-          pdbId: extractPDBId(data.name) || 'Unknown',
+          pdbId: extractPDBId(workflowData.name) || 'Unknown',
           description: getProteinDescription(proteinName)
         });
       } catch (err) {
@@ -113,8 +118,29 @@ export default function WorkflowDetailPage() {
   const getWorkflowTitle = () => {
     if (!workflow) return 'Loading...';
     
-    // Use the actual workflow name instead of extracting protein names
-    return `${workflow.name} - Drug Discovery Analysis`;
+    // Try to get PDB ID from various sources
+    let pdbId = null;
+    
+    // First, try to get from workflow results if available
+    if (workflow.results) {
+      try {
+        const resultsData = typeof workflow.results === 'string' 
+          ? JSON.parse(workflow.results) 
+          : workflow.results;
+        pdbId = resultsData?.pdb_id || resultsData?.pdbId || resultsData?.Pdb_Id;
+      } catch (e) {
+        console.log('Could not parse workflow results for PDB ID');
+      }
+    }
+    
+    // If not found, try to extract from workflow name
+    if (!pdbId) {
+      pdbId = extractPDBId(workflow.name);
+    }
+    
+    // Use PDB ID if found, otherwise use workflow name, or default
+    const displayName = pdbId || workflow.name || 'Workflow';
+    return `${displayName} - Drug Discovery Analysis`;
   };
 
   const getStageStatus = () => {
@@ -211,7 +237,19 @@ export default function WorkflowDetailPage() {
                   <Chip label={`PDB: ${proteinInfo.pdbId}`} variant="outlined" />
                 )}
                 <Chip 
-                  label={new Date(workflow.created_at).toLocaleDateString()} 
+                  label={(() => {
+                    if (workflow.created_at) {
+                      try {
+                        const date = new Date(workflow.created_at);
+                        if (!isNaN(date.getTime())) {
+                          return date.toLocaleDateString();
+                        }
+                      } catch (e) {
+                        console.log('Error parsing date:', e);
+                      }
+                    }
+                    return new Date().toLocaleDateString(); // Use current date as fallback
+                  })()} 
                   variant="outlined" 
                 />
               </Box>

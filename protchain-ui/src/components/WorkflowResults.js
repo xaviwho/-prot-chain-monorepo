@@ -446,13 +446,33 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
 
   const renderStructurePreparation = (data) => {
     console.log('Structure preparation data:', data);
-    console.log('descriptors: ', data.data.details.descriptors);
+    console.log('Data type:', typeof data);
+    console.log('Data keys:', data ? Object.keys(data) : 'no data');
     let structureData = {};
 
     if (typeof data === 'object' && data !== null) {
-      if (data.details && data.details.descriptors) {
+      // First, check if the entire data object needs to be parsed
+      if (data.data && typeof data.data === 'string') {
+        try {
+          // The data.data field might be a JSON string
+          const parsedData = JSON.parse(data.data);
+          console.log('Parsed data.data from string:', parsedData);
+          data = { ...data, data: parsedData };
+        } catch (e) {
+          console.log('Could not parse data.data as JSON');
+        }
+      }
+      
+      // Check various possible data structures
+      if (data.data && data.data.details && data.data.details.descriptors) {
+        console.log('Found data.data.details.descriptors format');
+        structureData = data.data.details.descriptors;
+      } else if (data.details && data.details.descriptors) {
         console.log('Found bioapi format with details.descriptors');
         structureData = data.details.descriptors;
+      } else if (data.descriptors) {
+        console.log('Found direct descriptors format');
+        structureData = data.descriptors;
       } else if (data.STRUCTURE_PREPARATION && data.STRUCTURE_PREPARATION.descriptors) {
         console.log('Found STRUCTURE_PREPARATION.descriptors format');
         structureData = data.STRUCTURE_PREPARATION.descriptors;
@@ -469,10 +489,63 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       } else if (data.structure_preparation && data.structure_preparation.descriptors) {
         console.log('Found structure_preparation.descriptors format');
         structureData = data.structure_preparation.descriptors;
+      } else if (data.data) {
+        // If data.data exists but doesn't have the expected structure, check if it needs parsing
+        console.log('Checking data.data:', data.data);
+        if (typeof data.data === 'string') {
+          try {
+            // Try to parse if it's a JSON string
+            const parsed = JSON.parse(data.data);
+            console.log('Parsed data.data from string:', parsed);
+            if (parsed.details && parsed.details.descriptors) {
+              structureData = parsed.details.descriptors;
+            } else if (parsed.descriptors) {
+              structureData = parsed.descriptors;
+            } else {
+              structureData = parsed;
+            }
+          } catch (e) {
+            console.log('Could not parse data.data as JSON, using directly');
+            structureData = data.data;
+          }
+        } else {
+          structureData = data.data;
+        }
+      } else {
+        // Last resort - use all the data we have
+        console.log('Using all available data');
+        structureData = { ...data };
+        
+        // If data.data exists and is an object, merge it in
+        if (data.data && typeof data.data === 'object') {
+          console.log('Merging data.data into structureData');
+          structureData = { ...structureData, ...data.data };
+          // Remove the nested data field to avoid duplication
+          delete structureData.data;
+        }
+      }
+
+      // Flatten: if nested data object holds details/descriptors, hoist them
+      if (data.data && typeof data.data === 'object') {
+        if (!structureData.details && data.data.details) {
+          structureData.details = data.data.details;
+        }
+        if (!structureData.descriptors && data.data.descriptors) {
+          structureData.descriptors = data.data.descriptors;
+        }
       }
     }
 
-    structureData = data.data.details.descriptors;
+    // If structureData is still a string, try to parse it
+    if (typeof structureData === 'string') {
+      try {
+        structureData = JSON.parse(structureData);
+        console.log('Parsed structureData from string:', structureData);
+      } catch (e) {
+        console.log('Could not parse structureData as JSON');
+      }
+    }
+
     console.log('Extracted structure data:', structureData);
     
 
@@ -506,97 +579,258 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {Object.entries(structureData).map(([key, value]) => (
-                  <TableRow key={key}>
-                    <TableCell sx={{ verticalAlign: 'top', fontWeight: 'medium' }}>
-                      {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </TableCell>
-                    <TableCell>
-                      {typeof value === 'boolean' 
-                        ? (value ? 'Yes' : 'No') 
-                        : typeof value === 'number' 
-                        ? value.toFixed(2) 
-                        : typeof value === 'object' && value !== null
-                        ? (
-                          <Box sx={{ p: 1, backgroundColor: '#f8f9fa', borderRadius: 1 }}>
-                            <Table size="small" sx={{ minWidth: 'auto' }}>
-                              <TableBody>
-                                {Object.entries(value).map(([subKey, subValue]) => (
-                                  <TableRow key={subKey} sx={{ 
-                                    '&:last-child td': { border: 0 },
-                                    '& td': { borderBottom: '1px solid #e0e0e0' }
-                                  }}>
-                                    <TableCell sx={{ 
-                                      py: 0.75, 
-                                      px: 1, 
-                                      fontSize: '0.875rem', 
-                                      fontWeight: 500,
-                                      color: '#555',
-                                      width: '40%'
-                                    }}>
-                                      {subKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                    </TableCell>
-                                    <TableCell sx={{ 
-                                      py: 0.75, 
-                                      px: 1, 
-                                      fontSize: '0.875rem',
-                                      fontWeight: 400
-                                    }}>
-                                      {typeof subValue === 'number' 
-                                        ? subValue.toFixed(2) 
-                                        : typeof subValue === 'object' && subValue !== null
-                                        ? (
-                                          <Box sx={{ p: 0.5, backgroundColor: '#f0f0f0', borderRadius: 0.5, mt: 0.5 }}>
-                                            <Table size="small" sx={{ minWidth: 'auto' }}>
-                                              <TableBody>
-                                                {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
-                                                  <TableRow key={nestedKey} sx={{ 
-                                                    '&:last-child td': { border: 0 },
-                                                    '& td': { borderBottom: '1px solid #ddd' }
-                                                  }}>
-                                                    <TableCell sx={{ 
-                                                      py: 0.5, 
-                                                      px: 0.75, 
-                                                      fontSize: '0.8rem', 
-                                                      fontWeight: 500,
-                                                      color: '#666',
-                                                      width: '45%'
-                                                    }}>
-                                                      {nestedKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                                    </TableCell>
-                                                    <TableCell sx={{ 
-                                                      py: 0.5, 
-                                                      px: 0.75, 
-                                                      fontSize: '0.8rem',
-                                                      fontWeight: 400
-                                                    }}>
-                                                      {typeof nestedValue === 'number' 
-                                                        ? nestedValue.toFixed(2) 
-                                                        : typeof nestedValue === 'object' && nestedValue !== null
-                                                        ? JSON.stringify(nestedValue, null, 2)
-                                                        : String(nestedValue)
-                                                      }
-                                                    </TableCell>
-                                                  </TableRow>
-                                                ))}
-                                              </TableBody>
-                                            </Table>
-                                          </Box>
-                                        )
-                                        : String(subValue)
-                                      }
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </Box>
-                        )
-                        : value
+                {(() => {
+                  // Extract and flatten the data properly
+                  const rows = {};
+                  
+                  console.log('Building rows from structureData:', structureData);
+                  
+                  // If structureData has a 'data' field, extract from it
+                  if (structureData.data && typeof structureData.data === 'object') {
+                    console.log('Extracting from nested data field');
+                    const nestedData = structureData.data;
+                    
+                    // Extract details and descriptors if they exist
+                    if (nestedData.details) {
+                      console.log('Details type:', typeof nestedData.details, nestedData.details);
+                      // If details is a string, try to parse it
+                      if (typeof nestedData.details === 'string') {
+                        try {
+                          rows['Details'] = JSON.parse(nestedData.details);
+                        } catch (e) {
+                          rows['Details'] = nestedData.details;
+                        }
+                      } else {
+                        rows['Details'] = nestedData.details;
                       }
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    }
+                    if (nestedData.descriptors) {
+                      console.log('Descriptors type:', typeof nestedData.descriptors, nestedData.descriptors);
+                      // If descriptors is a string, try to parse it
+                      if (typeof nestedData.descriptors === 'string') {
+                        try {
+                          rows['Descriptors'] = JSON.parse(nestedData.descriptors);
+                        } catch (e) {
+                          rows['Descriptors'] = nestedData.descriptors;
+                        }
+                      } else {
+                        rows['Descriptors'] = nestedData.descriptors;
+                      }
+                    }
+                    if (nestedData.method) {
+                      rows['Method'] = nestedData.method;
+                    }
+                    if (nestedData.pdb_id || nestedData.pdbId) {
+                      rows['Pdb Id'] = nestedData.pdb_id || nestedData.pdbId;
+                    }
+                    if (nestedData.status) {
+                      rows['Status'] = nestedData.status;
+                    }
+                    if (nestedData.workflow_id || nestedData.workflowId) {
+                      rows['Workflow Id'] = nestedData.workflow_id || nestedData.workflowId;
+                    }
+                  } else {
+                    // No nested data field, use structureData directly
+                    console.log('Using structureData directly');
+                    Object.entries(structureData).forEach(([key, value]) => {
+                      const keyLower = key.toLowerCase();
+                      
+                      // Skip raw PDB data
+                      if (typeof value === 'string' && value.length > 1000 && 
+                          (value.includes('ATOM') || value.includes('HETATM'))) {
+                        return;
+                      }
+                      
+                      // Skip large raw fields
+                      if ((keyLower === 'pdb_content' || keyLower === 'structure_data' || 
+                           keyLower === 'raw_data' || keyLower === 'file_content') && 
+                          typeof value === 'string' && value.length > 100) {
+                        return;
+                      }
+                      
+                      rows[key] = value;
+                    });
+                  }
+                  
+                  // Also add top-level metadata fields
+                  if (structureData.error !== undefined) {
+                    rows['Error'] = structureData.error || '';
+                  }
+                  if (structureData.success !== undefined) {
+                    rows['Success'] = structureData.success;
+                  }
+                  
+                  console.log('Final rows to display:', rows);
+
+                  return Object.entries(rows).map(([key, value]) => (
+                    <TableRow key={key}>
+                      <TableCell sx={{ verticalAlign: 'top', fontWeight: 'medium' }}>
+                        {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          // Try to parse string values that might be JSON
+                          let displayValue = value;
+                          if (typeof value === 'string') {
+                            // Check if it looks like JSON
+                            if ((value.startsWith('{') && value.endsWith('}')) || 
+                                (value.startsWith('[') && value.endsWith(']'))) {
+                              try {
+                                displayValue = JSON.parse(value);
+                                console.log('Parsed nested JSON:', displayValue);
+                              } catch (e) {
+                                // Not valid JSON, use as is
+                                displayValue = value;
+                              }
+                            }
+                            // Also check if it's "[object Object]" string
+                            else if (value === '[object Object]') {
+                              console.warn('Found [object Object] string, data was improperly stringified');
+                              displayValue = 'Data not properly formatted';
+                            }
+                          }
+                          
+                          // Now render based on type
+                          if (typeof displayValue === 'boolean') {
+                            return displayValue ? 'Yes' : 'No';
+                          } else if (typeof displayValue === 'number') {
+                            return displayValue.toFixed(2);
+                          } else if (typeof displayValue === 'object' && displayValue !== null) {
+                            // For large nested objects, show a formatted view
+                            const entries = Object.entries(displayValue);
+                            
+                            // If it's a very large object (like raw data), show it in a more compact format
+                            if (entries.length > 20 || JSON.stringify(displayValue).length > 1000) {
+                              return (
+                                <Box sx={{ 
+                                  p: 1, 
+                                  backgroundColor: '#f8f9fa', 
+                                  borderRadius: 1,
+                                  maxHeight: '200px',
+                                  overflowY: 'auto',
+                                  fontSize: '0.85rem',
+                                  fontFamily: 'monospace'
+                                }}>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                    {JSON.stringify(displayValue, null, 2)}
+                                  </pre>
+                                </Box>
+                              );
+                            }
+                            
+                            // For smaller objects, show in table format
+                            return (
+                            <Box sx={{ p: 1, backgroundColor: '#f8f9fa', borderRadius: 1 }}>
+                              <Table size="small" sx={{ minWidth: 'auto' }}>
+                                <TableBody>
+                                  {entries.map(([subKey, subValue]) => (
+                                    <TableRow key={subKey} sx={{ 
+                                      '&:last-child td': { border: 0 },
+                                      '& td': { borderBottom: '1px solid #e0e0e0' }
+                                    }}>
+                                      <TableCell sx={{ 
+                                        py: 0.75, 
+                                        px: 1, 
+                                        fontSize: '0.875rem', 
+                                        fontWeight: 500,
+                                        color: '#555',
+                                        width: '40%'
+                                      }}>
+                                        {subKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                      </TableCell>
+                                      <TableCell sx={{ 
+                                        py: 0.75, 
+                                        px: 1, 
+                                        fontSize: '0.875rem',
+                                        fontWeight: 400
+                                      }}>
+                                        {(() => {
+                                          // Handle different types of subValue
+                                          if (typeof subValue === 'number') {
+                                            return subValue.toFixed(2);
+                                          } else if (typeof subValue === 'boolean') {
+                                            return subValue ? 'Yes' : 'No';
+                                          } else if (typeof subValue === 'object' && subValue !== null) {
+                                            // Render nested object as a table
+                                            return (
+                                            <Box sx={{ p: 0.5, backgroundColor: '#f0f0f0', borderRadius: 0.5, mt: 0.5 }}>
+                                              <Table size="small" sx={{ minWidth: 'auto' }}>
+                                                <TableBody>
+                                                  {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                    <TableRow key={nestedKey} sx={{ 
+                                                      '&:last-child td': { border: 0 },
+                                                      '& td': { borderBottom: '1px solid #ddd' }
+                                                    }}>
+                                                      <TableCell sx={{ 
+                                                        py: 0.5, 
+                                                        px: 0.75, 
+                                                        fontSize: '0.8rem', 
+                                                        fontWeight: 500,
+                                                        color: '#666',
+                                                        width: '45%'
+                                                      }}>
+                                                        {nestedKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                                      </TableCell>
+                                                      <TableCell sx={{ py: 0.5, px: 0.75, fontSize: '0.8rem' }}>
+                                                        {(() => {
+                                                          if (typeof nestedValue === 'number') {
+                                                            return nestedValue.toFixed(2);
+                                                          } else if (typeof nestedValue === 'boolean') {
+                                                            return nestedValue ? 'Yes' : 'No';
+                                                          } else if (typeof nestedValue === 'object' && nestedValue !== null) {
+                                                            // For deeply nested objects, show as a compact table
+                                                            return (
+                                                              <Box sx={{ mt: 0.5 }}>
+                                                                <Table size="small" sx={{ minWidth: 'auto', '& td': { py: 0.25, px: 0.5, fontSize: '0.75rem', border: 'none' } }}>
+                                                                  <TableBody>
+                                                                    {Object.entries(nestedValue).map(([deepKey, deepValue]) => (
+                                                                      <TableRow key={deepKey}>
+                                                                        <TableCell sx={{ fontWeight: 500, color: '#888', width: '50%' }}>
+                                                                          {deepKey.replace(/_/g, ' ')}:
+                                                                        </TableCell>
+                                                                        <TableCell>
+                                                                          {typeof deepValue === 'number' ? deepValue.toFixed(2) : 
+                                                                           typeof deepValue === 'boolean' ? (deepValue ? 'Yes' : 'No') :
+                                                                           typeof deepValue === 'object' ? JSON.stringify(deepValue) : String(deepValue)}
+                                                                        </TableCell>
+                                                                      </TableRow>
+                                                                    ))}
+                                                                  </TableBody>
+                                                                </Table>
+                                                              </Box>
+                                                            );
+                                                          } else {
+                                                            return String(nestedValue);
+                                                          }
+                                                        })()}
+                                                      </TableCell>
+                                                    </TableRow>
+                                                  ))}
+                                                </TableBody>
+                                              </Table>
+                                            </Box>
+                                            );
+                                          } else {
+                                            // For strings and other primitives
+                                            return String(subValue);
+                                          }
+                                        })()}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </Box>
+                            );
+                          } else {
+                            // For strings and other types, display as is
+                            return displayValue;
+                          }
+                        })()}
+                      </TableCell>
+                    </TableRow>
+                  ));
+                })()}
               </TableBody>
             </Table>
           </TableContainer>
