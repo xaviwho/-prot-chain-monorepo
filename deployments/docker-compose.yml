@@ -17,9 +17,9 @@ services:
     container_name: protchainapi
     environment:
       - DATABASE_URL=postgres://postgres:mysecretpassword@db:5432/protchain?sslmode=disable
-      - ENVIRONMENT=development
+      - ENVIRONMENT=production
       - PORT=8082
-      - JWT_SECRET=protchain_super_secret_key_for_testing_2024
+      - JWT_SECRET=protchain_super_secure_jwt_key_for_production_2024_minimum_32_chars
       - BIOAPI_URL=http://bioapi:8000
       - IPFS_ENDPOINT=http://ipfs:5001
       - BLOCKCHAIN_RPC=https://purechainnode.com:8547
@@ -55,6 +55,18 @@ services:
       - ipfs_staging:/export
     environment:
       - IPFS_PROFILE=server
+    restart: unless-stopped
+
+  frontend:
+    image: xaviwho/protchain-ui:latest
+    container_name: protchain-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://ec2-13-124-243-4.ap-northeast-2.compute.amazonaws.com:8082/api/v1
+    depends_on:
+      - protchainapi
     restart: unless-stopped
 
 volumes:
