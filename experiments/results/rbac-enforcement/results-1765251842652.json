@@ -1,0 +1,136 @@
+{
+  "experimentId": "rbac-1765251842580",
+  "timestamp": "2025-12-09T03:44:02.580Z",
+  "endpoint": "http://localhost:8082/api/v1/workflows",
+  "testCases": [
+    {
+      "description": "Valid JWT Token",
+      "success": true,
+      "status": 200,
+      "statusText": "OK",
+      "responseTime": 51,
+      "data": {
+        "success": true,
+        "data": [
+          {
+            "id": 1,
+            "name": "Test",
+            "description": "A new protein analysis workflow",
+            "status": "structure_processed",
+            "results": "{\"data\":{\"details\":{\"descriptors\":{\"amino_acid_composition\":{\"ALA\":2,\"ARG\":1,\"ASN\":1,\"ASP\":3,\"GLN\":1,\"GLU\":3,\"GLY\":2,\"HIS\":3,\"LEU\":1,\"LYS\":2,\"PHE\":3,\"SER\":2,\"TYR\":1,\"VAL\":3},\"analysis_method\":\"real_protein_structure_analysis\",\"center_of_mass\":{\"x\":-0.04634706036625728,\"y\":-1.5364634638575658,\"z\":0.46030137859160136},\"chain_information\":[{\"chain_id\":\"A\",\"num_atoms\":438,\"num_residues\":28}],\"molecular_weight\":3080,\"num_atoms\":438,\"num_chains\":1,\"num_models\":5,\"num_residues\":28,\"pdb_id\":\"1AMC\",\"protein_classification\":\"peptide\",\"quality_metrics\":{\"completeness\":1,\"method\":\"basic_metrics\",\"r_factor\":\"unknown\",\"resolution\":\"unknown\"},\"secondary_structure\":{\"helices\":0,\"loops\":28,\"method\":\"simplified_analysis\",\"sheets\":0}}},\"method\":\"real_protein_analysis\",\"pdb_id\":\"1AMC\",\"status\":\"completed\",\"workflow_id\":\"1\"},\"error\":null,\"success\":true}",
+            "blockchain_tx_hash": null,
+            "ipfs_hash": null,
+            "blockchain_committed_at": null,
+            "created_at": "2025-09-27T13:38:18.846682Z",
+            "updated_at": "2025-10-25T11:55:54.587531Z"
+          }
+        ]
+      },
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR..."
+      },
+      "expectedStatus": 200,
+      "passed": true
+    },
+    {
+      "description": "No Authorization Header",
+      "success": true,
+      "status": 401,
+      "statusText": "Unauthorized",
+      "responseTime": 4,
+      "data": {
+        "error": "Authorization header required"
+      },
+      "headers": {
+        "Authorization": "none"
+      },
+      "expectedStatus": 401,
+      "passed": true
+    },
+    {
+      "description": "Forged JWT Token",
+      "success": true,
+      "status": 401,
+      "statusText": "Unauthorized",
+      "responseTime": 2,
+      "data": {
+        "error": "Invalid token"
+      },
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR..."
+      },
+      "expectedStatus": 401,
+      "passed": true
+    },
+    {
+      "description": "Expired JWT Token",
+      "success": true,
+      "status": 401,
+      "statusText": "Unauthorized",
+      "responseTime": 2,
+      "data": {
+        "error": "Invalid token"
+      },
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR..."
+      },
+      "expectedStatus": 401,
+      "passed": true
+    },
+    {
+      "description": "Malformed Bearer Token",
+      "success": true,
+      "status": 401,
+      "statusText": "Unauthorized",
+      "responseTime": 2,
+      "data": {
+        "error": "Invalid token"
+      },
+      "headers": {
+        "Authorization": "Bearer not.a.valid.jwt.token..."
+      },
+      "expectedStatus": 401,
+      "passed": true
+    },
+    {
+      "description": "Missing Bearer Prefix",
+      "success": true,
+      "status": 401,
+      "statusText": "Unauthorized",
+      "responseTime": 2,
+      "data": {
+        "error": "Bearer token required"
+      },
+      "headers": {
+        "Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6Ik..."
+      },
+      "expectedStatus": 401,
+      "passed": true
+    },
+    {
+      "description": "Tampered JWT Payload",
+      "success": true,
+      "status": 401,
+      "statusText": "Unauthorized",
+      "responseTime": 2,
+      "data": {
+        "error": "Invalid token"
+      },
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR..."
+      },
+      "expectedStatus": 401,
+      "passed": true
+    }
+  ],
+  "summary": {
+    "totalTests": 7,
+    "passedTests": 7,
+    "failedTests": 0,
+    "passRate": "100.0%",
+    "allPassed": true,
+    "unauthorizedRequestsBlocked": 6,
+    "authorizedRequestsAllowed": 1,
+    "conclusion": "All RBAC enforcement tests passed. JWT authentication correctly blocks unauthorized access."
+  }
+}

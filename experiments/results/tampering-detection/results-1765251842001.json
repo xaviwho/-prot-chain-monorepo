@@ -1,0 +1,95 @@
+{
+  "experimentId": "tampering-1765251841184",
+  "timestamp": "2025-12-09T03:44:01.184Z",
+  "pdbId": "1HPV",
+  "steps": [
+    {
+      "step": 1,
+      "name": "Fetch Original PDB",
+      "status": "success",
+      "data": {
+        "pdbId": "1HPV",
+        "size": 163215,
+        "fetchTime": 783
+      }
+    },
+    {
+      "step": 2,
+      "name": "Hash & IPFS Upload",
+      "status": "success",
+      "data": {
+        "sha256Hash": "ab6e368029f01a69641bcb69458e7f3ee02a3176c196482adffbedf8e6de5983",
+        "ipfsCid": "QmbTFSVy6Tf9eJVvYcHYLp7kYQ2X7zznmrJUiUaKoMJszW",
+        "uploadTime": 27,
+        "ipfsSimulated": false
+      }
+    },
+    {
+      "step": 3,
+      "name": "Blockchain Commit",
+      "status": "success",
+      "data": {
+        "workflowId": "workflow-1HPV-1765251841997",
+        "resultsHash": "ab6e368029f01a69641bcb69458e7f3ee02a3176c196482adffbedf8e6de5983",
+        "timestamp": 1765251841997,
+        "blockNumber": 1977610,
+        "transactionHash": "0xa37091b1c6cec9d57e06d9bfca09058dd7c4b9a2f9a638f998c7824c14793df9"
+      }
+    },
+    {
+      "step": 4,
+      "name": "Create Tampered File",
+      "status": "success",
+      "data": {
+        "modifications": [
+          {
+            "type": "coordinate_change",
+            "line": 346,
+            "original": "13.120",
+            "modified": "999.999"
+          },
+          {
+            "type": "injected_comment",
+            "line": 6,
+            "content": "REMARK 999 TAMPERED BY ADVERSARY - DATA INTEGRITY COMPROMISED"
+          }
+        ],
+        "tamperedHash": "1113ff078f842bc936641fac01f71f2b153d3e6fa47f0f2a939afcebb0111b1b",
+        "sizeDifference": 61
+      }
+    },
+    {
+      "step": 5,
+      "name": "Verify Original File",
+      "status": "PASS",
+      "data": {
+        "valid": true,
+        "computedHash": "ab6e368029f01a69641bcb69458e7f3ee02a3176c196482adffbedf8e6de5983",
+        "expectedHash": "ab6e368029f01a69641bcb69458e7f3ee02a3176c196482adffbedf8e6de5983",
+        "match": "MATCH"
+      }
+    },
+    {
+      "step": 6,
+      "name": "Verify Tampered File",
+      "status": "PASS",
+      "data": {
+        "valid": false,
+        "computedHash": "1113ff078f842bc936641fac01f71f2b153d3e6fa47f0f2a939afcebb0111b1b",
+        "expectedHash": "ab6e368029f01a69641bcb69458e7f3ee02a3176c196482adffbedf8e6de5983",
+        "match": "MISMATCH"
+      },
+      "tamperingDetected": true
+    }
+  ],
+  "summary": {
+    "success": true,
+    "originalFileVerification": "PASSED",
+    "tamperedFileDetection": "DETECTED",
+    "falsePositives": 0,
+    "falseNegatives": 0,
+    "hashAlgorithm": "SHA-256",
+    "blockchainNetwork": "PureChain (PoA²)",
+    "conclusion": "ProtChain successfully detected file tampering via hash-based verification"
+  }
+}

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="350" viewBox="0 0 600 350">
+  <style>
+    .title { font: bold 16px sans-serif; }
+    .axis-label { font: 12px sans-serif; }
+    .tick-label { font: 10px sans-serif; }
+    .bar-label { font: bold 11px sans-serif; fill: white; }
+    .value-label { font: 10px sans-serif; }
+  </style>
+  
+  <!-- Background -->
+  <rect width="600" height="350" fill="white"/>
+  
+  <!-- Title -->
+  <text x="300" y="30" text-anchor="middle" class="title">Average Latency by Validator Count</text>
+  
+  <!-- Y-axis -->
+  <line x1="80" y1="60" x2="80" y2="270" stroke="#333" stroke-width="1"/>
+  <text x="30" y="175" text-anchor="middle" transform="rotate(-90, 30, 175)" class="axis-label">Latency (ms)</text>
+  
+  <!-- X-axis -->
+  <line x1="80" y1="270" x2="570" y2="270" stroke="#333" stroke-width="1"/>
+  <text x="300" y="330" text-anchor="middle" class="axis-label">Number of Validators</text>
+  
+  <!-- Grid lines -->
+  <line x1="80" y1="60" x2="570" y2="60" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="64" text-anchor="end" class="tick-label">190.7</text>
+  <line x1="80" y1="102" x2="570" y2="102" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="106" text-anchor="end" class="tick-label">152.6</text>
+  <line x1="80" y1="144" x2="570" y2="144" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="148" text-anchor="end" class="tick-label">114.4</text>
+  <line x1="80" y1="186" x2="570" y2="186" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="190" text-anchor="end" class="tick-label">76.3</text>
+  <line x1="80" y1="228" x2="570" y2="228" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="232" text-anchor="end" class="tick-label">38.1</text>
+  <line x1="80" y1="270" x2="570" y2="270" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="274" text-anchor="end" class="tick-label">0.0</text>
+
+  <!-- Bar: 1 -->
+  <rect x="94.7" y="269.95595845414175" width="68.6" height="0.044041545858259624" fill="#16a34a" rx="2"/>
+  <text x="129" y="290" text-anchor="middle" class="tick-label">1</text>
+  <text x="129" y="264.95595845414175" text-anchor="middle" class="value-label">0.04</text>
+
+  <!-- Bar: 3 -->
+  <rect x="192.7" y="227.8742613865747" width="68.6" height="42.12573861342533" fill="#22c55e" rx="2"/>
+  <text x="227" y="290" text-anchor="middle" class="tick-label">3</text>
+  <text x="227" y="222.8742613865747" text-anchor="middle" class="value-label">38.26</text>
+
+  <!-- Bar: 5 -->
+  <rect x="290.7" y="184.73556721840936" width="68.6" height="85.26443278159063" fill="#ca8a04" rx="2"/>
+  <text x="325" y="290" text-anchor="middle" class="tick-label">5</text>
+  <text x="325" y="179.73556721840936" text-anchor="middle" class="value-label">77.44</text>
+
+  <!-- Bar: 7 -->
+  <rect x="388.7" y="143.21539986053511" width="68.6" height="126.78460013946489" fill="#f59e0b" rx="2"/>
+  <text x="423" y="290" text-anchor="middle" class="tick-label">7</text>
+  <text x="423" y="138.21539986053511" text-anchor="middle" class="value-label">115.15</text>
+
+  <!-- Bar: 10 -->
+  <rect x="486.7" y="79.09090909090912" width="68.6" height="190.90909090909088" fill="#dc2626" rx="2"/>
+  <text x="521" y="290" text-anchor="middle" class="tick-label">10</text>
+  <text x="521" y="74.09090909090912" text-anchor="middle" class="value-label">173.39</text>
+</svg>

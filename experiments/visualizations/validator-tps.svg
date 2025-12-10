@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="350" viewBox="0 0 600 350">
+  <style>
+    .title { font: bold 16px sans-serif; }
+    .axis-label { font: 12px sans-serif; }
+    .tick-label { font: 10px sans-serif; }
+    .bar-label { font: bold 11px sans-serif; fill: white; }
+    .value-label { font: 10px sans-serif; }
+  </style>
+  
+  <!-- Background -->
+  <rect width="600" height="350" fill="white"/>
+  
+  <!-- Title -->
+  <text x="300" y="30" text-anchor="middle" class="title">Transactions Per Second (TPS) by Validator Count</text>
+  
+  <!-- Y-axis -->
+  <line x1="80" y1="60" x2="80" y2="270" stroke="#333" stroke-width="1"/>
+  <text x="30" y="175" text-anchor="middle" transform="rotate(-90, 30, 175)" class="axis-label">TPS</text>
+  
+  <!-- X-axis -->
+  <line x1="80" y1="270" x2="570" y2="270" stroke="#333" stroke-width="1"/>
+  <text x="300" y="330" text-anchor="middle" class="axis-label">Number of Validators</text>
+  
+  <!-- Grid lines -->
+  <line x1="80" y1="60" x2="570" y2="60" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="64" text-anchor="end" class="tick-label">18333.3</text>
+  <line x1="80" y1="102" x2="570" y2="102" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="106" text-anchor="end" class="tick-label">14666.7</text>
+  <line x1="80" y1="144" x2="570" y2="144" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="148" text-anchor="end" class="tick-label">11000.0</text>
+  <line x1="80" y1="186" x2="570" y2="186" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="190" text-anchor="end" class="tick-label">7333.3</text>
+  <line x1="80" y1="228" x2="570" y2="228" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="232" text-anchor="end" class="tick-label">3666.7</text>
+  <line x1="80" y1="270" x2="570" y2="270" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="274" text-anchor="end" class="tick-label">0.0</text>
+
+  <!-- Bar: 1 -->
+  <rect x="94.7" y="79.0909090909091" width="68.6" height="190.9090909090909" fill="#2563eb" rx="2"/>
+  <text x="129" y="290" text-anchor="middle" class="tick-label">1</text>
+  <text x="129" y="74.0909090909091" text-anchor="middle" class="value-label">16666.67</text>
+
+  <!-- Bar: 3 -->
+  <rect x="192.7" y="269.7006912606599" width="68.6" height="0.29930873934009544" fill="#3b82f6" rx="2"/>
+  <text x="227" y="290" text-anchor="middle" class="tick-label">3</text>
+  <text x="227" y="264.7006912606599" text-anchor="middle" class="value-label">26.13</text>
+
+  <!-- Bar: 5 -->
+  <rect x="290.7" y="269.8521039967134" width="68.6" height="0.14789600328657782" fill="#7c3aed" rx="2"/>
+  <text x="325" y="290" text-anchor="middle" class="tick-label">5</text>
+  <text x="325" y="264.8521039967134" text-anchor="middle" class="value-label">12.91</text>
+
+  <!-- Bar: 7 -->
+  <rect x="388.7" y="269.90054228137063" width="68.6" height="0.0994577186293779" fill="#a855f7" rx="2"/>
+  <text x="423" y="290" text-anchor="middle" class="tick-label">7</text>
+  <text x="423" y="264.90054228137063" text-anchor="middle" class="value-label">8.68</text>
+
+  <!-- Bar: 10 -->
+  <rect x="486.7" y="269.93394149103494" width="68.6" height="0.06605850896508335" fill="#dc2626" rx="2"/>
+  <text x="521" y="290" text-anchor="middle" class="tick-label">10</text>
+  <text x="521" y="264.93394149103494" text-anchor="middle" class="value-label">5.77</text>
+</svg>

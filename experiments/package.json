@@ -1,0 +1,22 @@
+{
+  "name": "protchain-experiments",
+  "version": "1.0.0",
+  "description": "Experiments for ProtChain PeerJ Computer Science paper review",
+  "scripts": {
+    "tampering": "node security/tampering-detection.js",
+    "auth": "node security/rbac-enforcement.js",
+    "energy": "node performance/energy-consumption.js",
+    "validators": "node performance/multi-validator.js",
+    "all": "npm run tampering && npm run auth && npm run energy && npm run validators",
+    "report": "node generate-report.js",
+    "visualize": "node generate-visualizations.js",
+    "full": "npm run all && npm run visualize && npm run report"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "crypto": "^1.0.1",
+    "ethers": "^5.7.2",
+    "form-data": "^4.0.0",
+    "node-fetch": "^2.7.0"
+  }
+}

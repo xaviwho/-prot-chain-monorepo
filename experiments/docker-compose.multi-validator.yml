@@ -1,0 +1,161 @@
+# Multi-Validator Docker Compose Configuration
+# For Experiment 4: Multi-Validator Performance Test
+#
+# This configuration simulates a 5-validator PureChain network
+# for benchmarking PoA² consensus scaling behavior.
+
+version: '3.8'
+
+services:
+  # Validator 1 (Primary/Bootstrap)
+  purechain-validator-1:
+    image: ethereum/client-go:stable
+    container_name: purechain-validator-1
+    command:
+      - --networkid=900520900520
+      - --nodiscover
+      - --mine
+      - --miner.threads=1
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,personal,admin
+      - --http.corsdomain=*
+      - --allow-insecure-unlock
+      - --datadir=/data
+    volumes:
+      - validator1_data:/data
+    ports:
+      - "8545:8545"
+      - "30303:30303"
+    networks:
+      - purechain-net
+    environment:
+      - VALIDATOR_ID=1
+
+  # Validator 2
+  purechain-validator-2:
+    image: ethereum/client-go:stable
+    container_name: purechain-validator-2
+    command:
+      - --networkid=900520900520
+      - --nodiscover
+      - --mine
+      - --miner.threads=1
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,personal,admin
+      - --http.corsdomain=*
+      - --allow-insecure-unlock
+      - --datadir=/data
+      - --bootnodes=enode://validator1@purechain-validator-1:30303
+    volumes:
+      - validator2_data:/data
+    ports:
+      - "8546:8545"
+      - "30304:30303"
+    networks:
+      - purechain-net
+    depends_on:
+      - purechain-validator-1
+    environment:
+      - VALIDATOR_ID=2
+
+  # Validator 3
+  purechain-validator-3:
+    image: ethereum/client-go:stable
+    container_name: purechain-validator-3
+    command:
+      - --networkid=900520900520
+      - --nodiscover
+      - --mine
+      - --miner.threads=1
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,personal,admin
+      - --http.corsdomain=*
+      - --allow-insecure-unlock
+      - --datadir=/data
+      - --bootnodes=enode://validator1@purechain-validator-1:30303
+    volumes:
+      - validator3_data:/data
+    ports:
+      - "8547:8545"
+      - "30305:30303"
+    networks:
+      - purechain-net
+    depends_on:
+      - purechain-validator-1
+    environment:
+      - VALIDATOR_ID=3
+
+  # Validator 4
+  purechain-validator-4:
+    image: ethereum/client-go:stable
+    container_name: purechain-validator-4
+    command:
+      - --networkid=900520900520
+      - --nodiscover
+      - --mine
+      - --miner.threads=1
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,personal,admin
+      - --http.corsdomain=*
+      - --allow-insecure-unlock
+      - --datadir=/data
+      - --bootnodes=enode://validator1@purechain-validator-1:30303
+    volumes:
+      - validator4_data:/data
+    ports:
+      - "8548:8545"
+      - "30306:30303"
+    networks:
+      - purechain-net
+    depends_on:
+      - purechain-validator-1
+    environment:
+      - VALIDATOR_ID=4
+
+  # Validator 5
+  purechain-validator-5:
+    image: ethereum/client-go:stable
+    container_name: purechain-validator-5
+    command:
+      - --networkid=900520900520
+      - --nodiscover
+      - --mine
+      - --miner.threads=1
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,personal,admin
+      - --http.corsdomain=*
+      - --allow-insecure-unlock
+      - --datadir=/data
+      - --bootnodes=enode://validator1@purechain-validator-1:30303
+    volumes:
+      - validator5_data:/data
+    ports:
+      - "8549:8545"
+      - "30307:30303"
+    networks:
+      - purechain-net
+    depends_on:
+      - purechain-validator-1
+    environment:
+      - VALIDATOR_ID=5
+
+networks:
+  purechain-net:
+    driver: bridge
+
+volumes:
+  validator1_data:
+  validator2_data:
+  validator3_data:
+  validator4_data:
+  validator5_data:

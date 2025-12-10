@@ -1,0 +1,73 @@
+% ProtChain Experiment Tables for PeerJ Paper
+% Generated: 2025-12-09T06:11:44.835Z
+% Include with: \input{experiment-tables.tex}
+
+\usepackage{booktabs}
+
+\begin{table}[htbp]
+\centering
+\caption{Tampering Detection Experiment Results}
+\label{tab:tampering}
+\begin{tabular}{c c c c}
+\toprule
+Test Case & Expected & Actual & Result \\
+\midrule
+Original File Verification & PASS & PASSED & ✓ \\
+Tampered File Detection & DETECTED & DETECTED & ✓ \\
+False Positives & 0 & 0 & ✓ \\
+False Negatives & 0 & 0 & ✓ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{RBAC Enforcement Test Results}
+\label{tab:rbac}
+\begin{tabular}{c c c c c}
+\toprule
+Test Case & Token Type & Expected & Actual & Result \\
+\midrule
+Valid JWT Token & - & 200 & 200 & ✓ \\
+No Authorization Header & - & 401 & 401 & ✓ \\
+Forged JWT Token & - & 401 & 401 & ✓ \\
+Expired JWT Token & - & 401 & 401 & ✓ \\
+Malformed Bearer Token & - & 401 & 401 & ✓ \\
+Missing Bearer Prefix & - & 401 & 401 & ✓ \\
+Tampered JWT Payload & - & 401 & 401 & ✓ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Energy Consumption Analysis Results}
+\label{tab:energy}
+\begin{tabular}{c c c c}
+\toprule
+Metric & API-Only & API + Blockchain & Overhead \\
+\midrule
+Total Time (ms) & 54252 & 431566 & 695.5% \\
+Avg CPU (%) & 19.9% & 24.3% & - \\
+Energy (Wh) & 0.045069 & 0.436073 & 867.6% \\
+Energy/Request (J) & 1.6225 & 15.6986 & - \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Multi-Validator Performance Scaling (1-10 Validators)}
+\label{tab:validators}
+\begin{tabular}{c c c c c}
+\toprule
+Validators & TPS & Avg Latency (ms) & P95 Latency (ms) & TPS Change \\
+\midrule
+1 & 16666.67 & 0.04 & 0.00 & Baseline \\
+3 & 26.13 & 38.26 & 43.00 & -99.8% \\
+5 & 12.91 & 77.44 & 84.00 & -99.9% \\
+7 & 8.68 & 115.15 & 125.00 & -99.9% \\
+10 & 5.77 & 173.39 & 184.00 & -100.0% \\
+\bottomrule
+\end{tabular}
+\end{table}

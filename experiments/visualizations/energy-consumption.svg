@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="550" height="350" viewBox="0 0 550 350">
+  <style>
+    .title { font: bold 16px sans-serif; }
+    .axis-label { font: 12px sans-serif; }
+    .tick-label { font: 10px sans-serif; }
+    .legend-label { font: 11px sans-serif; }
+    .value-label { font: 9px sans-serif; }
+  </style>
+  
+  <rect width="550" height="350" fill="white"/>
+  <text x="235" y="30" text-anchor="middle" class="title">Energy Consumption Comparison</text>
+  
+  <!-- Axes -->
+  <line x1="80" y1="60" x2="80" y2="270" stroke="#333"/>
+  <line x1="80" y1="270" x2="430" y2="270" stroke="#333"/>
+  <text x="30" y="175" text-anchor="middle" transform="rotate(-90, 30, 175)" class="axis-label">Energy (mWh / Joules)</text>
+  <text x="255" y="330" text-anchor="middle" class="axis-label">Metric</text>
+  
+  <!-- Legend -->
+  <rect x="440" y="60" width="15" height="15" fill="#2563eb"/>
+  <text x="460" y="72" class="legend-label">API-Only</text>
+  <rect x="440" y="85" width="15" height="15" fill="#dc2626"/>
+  <text x="460" y="97" class="legend-label">API + Blockchain</text>
+  <line x1="80" y1="60" x2="430" y2="60" stroke="#e5e5e5"/>
+  <text x="70" y="64" text-anchor="end" class="tick-label">479.7</text>
+  <line x1="80" y1="102" x2="430" y2="102" stroke="#e5e5e5"/>
+  <text x="70" y="106" text-anchor="end" class="tick-label">383.7</text>
+  <line x1="80" y1="144" x2="430" y2="144" stroke="#e5e5e5"/>
+  <text x="70" y="148" text-anchor="end" class="tick-label">287.8</text>
+  <line x1="80" y1="186" x2="430" y2="186" stroke="#e5e5e5"/>
+  <text x="70" y="190" text-anchor="end" class="tick-label">191.9</text>
+  <line x1="80" y1="228" x2="430" y2="228" stroke="#e5e5e5"/>
+  <text x="70" y="232" text-anchor="end" class="tick-label">95.9</text>
+  <line x1="80" y1="270" x2="430" y2="270" stroke="#e5e5e5"/>
+  <text x="70" y="274" text-anchor="end" class="tick-label">0.0</text>
+  <rect x="97.5" y="250.269170945732" width="59.24999999999999" height="19.730829054268018" fill="#2563eb" rx="2"/>
+  <text x="127.125" y="247.269170945732" text-anchor="middle" class="value-label">45.07</text>
+  <rect x="158.75" y="79.0909090909091" width="59.24999999999999" height="190.9090909090909" fill="#dc2626" rx="2"/>
+  <text x="188.375" y="76.0909090909091" text-anchor="middle" class="value-label">436.07</text>
+  <text x="158.75" y="290" text-anchor="middle" class="tick-label">Total Energy</text>
+  <rect x="272.5" y="269.28968314938095" width="59.24999999999999" height="0.7103168506190478" fill="#2563eb" rx="2"/>
+  <text x="302.125" y="266.28968314938095" text-anchor="middle" class="value-label">1.62</text>
+  <rect x="333.75" y="263.1272849854372" width="59.24999999999999" height="6.872715014562824" fill="#dc2626" rx="2"/>
+  <text x="363.375" y="260.1272849854372" text-anchor="middle" class="value-label">15.70</text>
+  <text x="333.75" y="290" text-anchor="middle" class="tick-label">Per Request</text>
+</svg>

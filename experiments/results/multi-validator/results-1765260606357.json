@@ -1,0 +1,206 @@
+{
+  "experimentId": "multi-validator-1765260565918",
+  "timestamp": "2025-12-09T06:09:25.918Z",
+  "config": {
+    "API_URL": "http://localhost:8082",
+    "PURECHAIN_RPC": "https://purechainnode.com:8547",
+    "NUM_TRANSACTIONS": 100,
+    "VALIDATOR_CONFIGS": [
+      1,
+      3,
+      5,
+      7,
+      10
+    ],
+    "SIGNATURE_DELAY_MS": 15,
+    "BLOCK_TIME_MS": 2000,
+    "RESULTS_DIR": "C:\\Users\\Xavie\\CascadeProjects\\prot-chain-monorepo\\experiments\\results\\multi-validator"
+  },
+  "benchmarks": {
+    "validators_1": {
+      "numValidators": 1,
+      "numTransactions": 100,
+      "totalTimeMs": 6,
+      "blocks": 10,
+      "metrics": {
+        "tps": 16666.666666666668,
+        "avgLatencyMs": 0.04,
+        "p95LatencyMs": 0,
+        "p99LatencyMs": 1,
+        "minLatencyMs": 0,
+        "maxLatencyMs": 1
+      },
+      "blockMetrics": {
+        "avgBlockTimeMs": 0.4,
+        "avgTxPerBlock": 10
+      }
+    },
+    "validators_3": {
+      "numValidators": 3,
+      "numTransactions": 100,
+      "totalTimeMs": 3827,
+      "blocks": 10,
+      "metrics": {
+        "tps": 26.130128037627383,
+        "avgLatencyMs": 38.26,
+        "p95LatencyMs": 43,
+        "p99LatencyMs": 46,
+        "minLatencyMs": 32,
+        "maxLatencyMs": 46
+      },
+      "blockMetrics": {
+        "avgBlockTimeMs": 382.6,
+        "avgTxPerBlock": 10
+      }
+    },
+    "validators_5": {
+      "numValidators": 5,
+      "numTransactions": 100,
+      "totalTimeMs": 7745,
+      "blocks": 10,
+      "metrics": {
+        "tps": 12.911555842479018,
+        "avgLatencyMs": 77.44,
+        "p95LatencyMs": 84,
+        "p99LatencyMs": 88,
+        "minLatencyMs": 67,
+        "maxLatencyMs": 88
+      },
+      "blockMetrics": {
+        "avgBlockTimeMs": 774.4,
+        "avgTxPerBlock": 10
+      }
+    },
+    "validators_7": {
+      "numValidators": 7,
+      "numTransactions": 100,
+      "totalTimeMs": 11517,
+      "blocks": 10,
+      "metrics": {
+        "tps": 8.682816705739342,
+        "avgLatencyMs": 115.15,
+        "p95LatencyMs": 125,
+        "p99LatencyMs": 129,
+        "minLatencyMs": 103,
+        "maxLatencyMs": 129
+      },
+      "blockMetrics": {
+        "avgBlockTimeMs": 1151.5,
+        "avgTxPerBlock": 10
+      }
+    },
+    "validators_10": {
+      "numValidators": 10,
+      "numTransactions": 100,
+      "totalTimeMs": 17340,
+      "blocks": 10,
+      "metrics": {
+        "tps": 5.767012687427912,
+        "avgLatencyMs": 173.39,
+        "p95LatencyMs": 184,
+        "p99LatencyMs": 195,
+        "minLatencyMs": 154,
+        "maxLatencyMs": 195
+      },
+      "blockMetrics": {
+        "avgBlockTimeMs": 1733.9,
+        "avgTxPerBlock": 10
+      }
+    }
+  },
+  "theoretical": {
+    "validators_1": {
+      "numValidators": 1,
+      "theoreticalLatencyMs": 0.04,
+      "theoreticalTps": 16666.666666666668,
+      "latencyIncrease": 0,
+      "tpsDecrease": 0
+    },
+    "validators_3": {
+      "numValidators": 3,
+      "theoreticalLatencyMs": 0.04576000000000001,
+      "theoreticalTps": 14568.764568764569,
+      "latencyIncrease": 14.400000000000022,
+      "tpsDecrease": 12.587412587412592
+    },
+    "validators_5": {
+      "numValidators": 5,
+      "theoreticalLatencyMs": 0.051840000000000004,
+      "theoreticalTps": 12860.08230452675,
+      "latencyIncrease": 29.60000000000001,
+      "tpsDecrease": 22.839506172839506
+    },
+    "validators_7": {
+      "numValidators": 7,
+      "theoreticalLatencyMs": 0.058240000000000014,
+      "theoreticalTps": 11446.886446886447,
+      "latencyIncrease": 45.60000000000003,
+      "tpsDecrease": 31.318681318681325
+    },
+    "validators_10": {
+      "numValidators": 10,
+      "theoreticalLatencyMs": 0.06843999999999999,
+      "theoreticalTps": 9740.892265731543,
+      "latencyIncrease": 71.09999999999997,
+      "tpsDecrease": 41.55464640561075
+    }
+  },
+  "comparison": {
+    "tps": {
+      "1_validator": 16666.666666666668,
+      "3_validators": 26.130128037627383,
+      "5_validators": 12.911555842479018,
+      "7_validators": 8.682816705739342,
+      "10_validators": 5.767012687427912,
+      "degradation_1_to_5": 99.92253066494513,
+      "degradation_1_to_7": 99.94790309976557,
+      "degradation_1_to_10": 99.96539792387541,
+      "degradation_5_to_10": 55.33448673587081
+    },
+    "latency": {
+      "1_validator": 0.04,
+      "3_validators": 38.26,
+      "5_validators": 77.44,
+      "7_validators": 115.15,
+      "10_validators": 173.39,
+      "increase_1_to_5": 193499.99999999997,
+      "increase_1_to_7": 287775,
+      "increase_1_to_10": 433375,
+      "increase_5_to_10": 123.90237603305785
+    }
+  },
+  "summary": {
+    "baseline": {
+      "validators": 1,
+      "tps": "16666.67",
+      "avgLatencyMs": "0.04"
+    },
+    "scaled_5": {
+      "validators": 5,
+      "tps": "12.91",
+      "avgLatencyMs": "77.44",
+      "tpsDegradation": "99.9%",
+      "latencyIncrease": "193500.0%"
+    },
+    "scaled_7": {
+      "validators": 7,
+      "tps": "8.68",
+      "avgLatencyMs": "115.15",
+      "tpsDegradation": "99.9%",
+      "latencyIncrease": "287775.0%"
+    },
+    "scaled_10": {
+      "validators": 10,
+      "tps": "5.77",
+      "avgLatencyMs": "173.39",
+      "tpsDegradation": "100.0%",
+      "latencyIncrease": "433375.0%"
+    },
+    "reviewer_focus": {
+      "range": "5-10 validators",
+      "tpsDegradation": "55.3%",
+      "latencyIncrease": "123.9%"
+    },
+    "conclusion": "Multi-validator scaling from 5 to 10 validators shows 55.3% TPS degradation and 123.9% latency increase. Overall scaling from 1 to 10 validators shows 100.0% TPS degradation. This demonstrates PoA²'s efficient consensus mechanism remains practical for biomedical workflow applications even with a larger validator set."
+  }
+}

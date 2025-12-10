@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="650" height="350" viewBox="0 0 650 350">
+  <style>
+    .title { font: bold 16px sans-serif; }
+    .axis-label { font: 12px sans-serif; }
+    .tick-label { font: 10px sans-serif; }
+    .bar-label { font: bold 11px sans-serif; fill: white; }
+    .value-label { font: 10px sans-serif; }
+  </style>
+  
+  <!-- Background -->
+  <rect width="650" height="350" fill="white"/>
+  
+  <!-- Title -->
+  <text x="325" y="30" text-anchor="middle" class="title">RBAC Test Results: All Tests Passed</text>
+  
+  <!-- Y-axis -->
+  <line x1="80" y1="60" x2="80" y2="270" stroke="#333" stroke-width="1"/>
+  <text x="30" y="175" text-anchor="middle" transform="rotate(-90, 30, 175)" class="axis-label">Pass (1) / Fail (0)</text>
+  
+  <!-- X-axis -->
+  <line x1="80" y1="270" x2="620" y2="270" stroke="#333" stroke-width="1"/>
+  <text x="325" y="330" text-anchor="middle" class="axis-label">Test Case</text>
+  
+  <!-- Grid lines -->
+  <line x1="80" y1="60" x2="620" y2="60" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="64" text-anchor="end" class="tick-label">1.1</text>
+  <line x1="80" y1="102" x2="620" y2="102" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="106" text-anchor="end" class="tick-label">0.9</text>
+  <line x1="80" y1="144" x2="620" y2="144" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="148" text-anchor="end" class="tick-label">0.7</text>
+  <line x1="80" y1="186" x2="620" y2="186" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="190" text-anchor="end" class="tick-label">0.4</text>
+  <line x1="80" y1="228" x2="620" y2="228" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="232" text-anchor="end" class="tick-label">0.2</text>
+  <line x1="80" y1="270" x2="620" y2="270" stroke="#e5e5e5" stroke-width="1"/>
+  <text x="70" y="274" text-anchor="end" class="tick-label">0.0</text>
+
+  <!-- Bar: Authorized
+(Allowed) -->
+  <rect x="93.5" y="79.0909090909091" width="62.99999999999999" height="190.9090909090909" fill="#16a34a" rx="2"/>
+  <text x="125" y="290" text-anchor="middle" class="tick-label">Authorized
+(Allowed)</text>
+  <text x="125" y="74.0909090909091" text-anchor="middle" class="value-label">1.00</text>
+
+  <!-- Bar: No Token
+(Blocked) -->
+  <rect x="183.5" y="79.0909090909091" width="62.99999999999999" height="190.9090909090909" fill="#dc2626" rx="2"/>
+  <text x="215" y="290" text-anchor="middle" class="tick-label">No Token
+(Blocked)</text>
+  <text x="215" y="74.0909090909091" text-anchor="middle" class="value-label">1.00</text>
+
+  <!-- Bar: Forged
+(Blocked) -->
+  <rect x="273.5" y="79.0909090909091" width="62.99999999999999" height="190.9090909090909" fill="#dc2626" rx="2"/>
+  <text x="305" y="290" text-anchor="middle" class="tick-label">Forged
+(Blocked)</text>
+  <text x="305" y="74.0909090909091" text-anchor="middle" class="value-label">1.00</text>
+
+  <!-- Bar: Expired
+(Blocked) -->
+  <rect x="363.5" y="79.0909090909091" width="62.99999999999999" height="190.9090909090909" fill="#dc2626" rx="2"/>
+  <text x="395" y="290" text-anchor="middle" class="tick-label">Expired
+(Blocked)</text>
+  <text x="395" y="74.0909090909091" text-anchor="middle" class="value-label">1.00</text>
+
+  <!-- Bar: Malformed
+(Blocked) -->
+  <rect x="453.5" y="79.0909090909091" width="62.99999999999999" height="190.9090909090909" fill="#dc2626" rx="2"/>
+  <text x="485" y="290" text-anchor="middle" class="tick-label">Malformed
+(Blocked)</text>
+  <text x="485" y="74.0909090909091" text-anchor="middle" class="value-label">1.00</text>
+
+  <!-- Bar: Tampered
+(Blocked) -->
+  <rect x="543.5" y="79.0909090909091" width="62.99999999999999" height="190.9090909090909" fill="#dc2626" rx="2"/>
+  <text x="575" y="290" text-anchor="middle" class="tick-label">Tampered
+(Blocked)</text>
+  <text x="575" y="74.0909090909091" text-anchor="middle" class="value-label">1.00</text>
+</svg>

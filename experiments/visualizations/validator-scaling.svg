@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="650" height="380" viewBox="0 0 650 380">
+  <style>
+    .title { font: bold 14px sans-serif; }
+    .axis-label { font: 11px sans-serif; }
+    .tick-label { font: 10px sans-serif; }
+    .line-label { font: 10px sans-serif; }
+    .focus-box { fill: #fef3c7; stroke: #ca8a04; stroke-width: 1; }
+  </style>
+  <rect width="650" height="380" fill="white"/>
+  <text x="325" y="25" text-anchor="middle" class="title">PoA² Consensus Scaling: 1-10 Validators</text>
+  
+  <!-- Reviewer focus area (5-10 validators) -->
+  <rect x="280" y="50" width="290" height="230" class="focus-box" rx="4" opacity="0.3"/>
+  <text x="425" y="68" text-anchor="middle" class="tick-label" fill="#ca8a04">Reviewer Focus: 5-10 Validators</text>
+  
+  <!-- Axes -->
+  <line x1="70" y1="50" x2="70" y2="280" stroke="#333"/>
+  <line x1="70" y1="280" x2="580" y2="280" stroke="#333"/>
+  <text x="30" y="165" text-anchor="middle" transform="rotate(-90, 30, 165)" class="axis-label">Relative TPS (%)</text>
+  <text x="325" y="320" text-anchor="middle" class="axis-label">Number of Validators</text>
+  
+  <!-- Grid -->
+  <line x1="70" y1="50" x2="580" y2="50" stroke="#e5e5e5"/>
+  <line x1="70" y1="107" x2="580" y2="107" stroke="#e5e5e5"/>
+  <line x1="70" y1="165" x2="580" y2="165" stroke="#e5e5e5"/>
+  <line x1="70" y1="222" x2="580" y2="222" stroke="#e5e5e5"/>
+  
+  <text x="65" y="54" text-anchor="end" class="tick-label">100%</text>
+  <text x="65" y="111" text-anchor="end" class="tick-label">75%</text>
+  <text x="65" y="169" text-anchor="end" class="tick-label">50%</text>
+  <text x="65" y="226" text-anchor="end" class="tick-label">25%</text>
+  <text x="65" y="284" text-anchor="end" class="tick-label">0%</text>
+  
+  <!-- X-axis labels -->
+  <text x="90" y="300" text-anchor="middle" class="tick-label">1</text>
+  <text x="185" y="300" text-anchor="middle" class="tick-label">3</text>
+  <text x="280" y="300" text-anchor="middle" class="tick-label">5</text>
+  <text x="375" y="300" text-anchor="middle" class="tick-label">7</text>
+  <text x="520" y="300" text-anchor="middle" class="tick-label">10</text>
+  
+  <!-- Measured TPS Line (normalized to baseline) -->
+  <polyline points="90,50 185,279.63940423308077 280,279.8218205293738 375,279.8801771294608 520,279.9204152249135" 
+            fill="none" stroke="#2563eb" stroke-width="3"/>
+  
+  <!-- Data points -->
+  <circle cx="90" cy="50" r="5" fill="#2563eb"/>
+  <circle cx="185" cy="279.63940423308077" r="5" fill="#2563eb"/>
+  <circle cx="280" cy="279.8218205293738" r="5" fill="#7c3aed"/>
+  <circle cx="375" cy="279.8801771294608" r="5" fill="#7c3aed"/>
+  <circle cx="520" cy="279.9204152249135" r="5" fill="#dc2626"/>
+  
+  <!-- Theoretical Line -->
+  <polyline points="90,50 185,78.95104895104896 280,102.53086419753086 375,122.03296703296706 520,145.5756867329047" 
+            fill="none" stroke="#16a34a" stroke-width="2" stroke-dasharray="5,5"/>
+  
+  <!-- Legend -->
+  <line x1="70" y1="350" x2="100" y2="350" stroke="#2563eb" stroke-width="3"/>
+  <text x="105" y="354" class="line-label">Measured TPS</text>
+  <line x1="200" y1="350" x2="230" y2="350" stroke="#16a34a" stroke-width="2" stroke-dasharray="5,5"/>
+  <text x="235" y="354" class="line-label">Theoretical</text>
+  <rect x="330" y="343" width="15" height="15" fill="#fef3c7" stroke="#ca8a04"/>
+  <text x="350" y="354" class="line-label">5-10 Validator Focus</text>
+</svg>

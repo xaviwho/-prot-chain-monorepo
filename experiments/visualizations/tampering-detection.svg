@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="300" viewBox="0 0 500 300">
+  <style>
+    .title { font: bold 14px sans-serif; }
+    .label { font: 11px sans-serif; }
+    .hash { font: 9px monospace; fill: #666; }
+  </style>
+  <rect width="500" height="300" fill="white"/>
+  <text x="250" y="25" text-anchor="middle" class="title">Hash Verification Comparison</text>
+  
+  <!-- Original File -->
+  <rect x="50" y="60" width="180" height="100" fill="#dcfce7" stroke="#16a34a" stroke-width="2" rx="8"/>
+  <text x="140" y="90" text-anchor="middle" class="label" font-weight="bold">Original File</text>
+  <text x="140" y="110" text-anchor="middle" class="hash">ab6e3680......</text>
+  <text x="140" y="140" text-anchor="middle" fill="#16a34a" font-weight="bold">✓ MATCH</text>
+  
+  <!-- Tampered File -->
+  <rect x="270" y="60" width="180" height="100" fill="#fee2e2" stroke="#dc2626" stroke-width="2" rx="8"/>
+  <text x="360" y="90" text-anchor="middle" class="label" font-weight="bold">Tampered File</text>
+  <text x="360" y="110" text-anchor="middle" class="hash">1113ff07......</text>
+  <text x="360" y="140" text-anchor="middle" fill="#dc2626" font-weight="bold">✗ MISMATCH</text>
+  
+  <!-- On-chain Reference -->
+  <rect x="130" y="200" width="240" height="60" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="8"/>
+  <text x="250" y="225" text-anchor="middle" class="label" font-weight="bold">On-Chain Reference Hash</text>
+  <text x="250" y="245" text-anchor="middle" class="hash">ab6e368029f01a69641bcb69458e7f3e...</text>
+  
+  <!-- Arrows -->
+  <path d="M140 160 L200 200" stroke="#16a34a" stroke-width="2" fill="none" marker-end="url(#arrow-green)"/>
+  <path d="M360 160 L300 200" stroke="#dc2626" stroke-width="2" fill="none" marker-end="url(#arrow-red)"/>
+  
+  <defs>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+</svg>
