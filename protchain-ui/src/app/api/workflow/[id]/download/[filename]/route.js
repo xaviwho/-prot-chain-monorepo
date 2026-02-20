@@ -12,7 +12,6 @@ export async function GET(request, { params }) {
   const id = resolvedParams.id;
   const filename = resolvedParams.filename;
   
-  console.log(`Downloading ${filename} for workflow: ${id}`);
   
   // Validate filename to prevent directory traversal attacks
   if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
@@ -66,7 +65,6 @@ export async function GET(request, { params }) {
     
     return response;
   } catch (err) {
-    console.error(`Error downloading file: ${err.message}`);
     return NextResponse.json(
       { error: err.message || 'Failed to download file' },
       { status: 500 }

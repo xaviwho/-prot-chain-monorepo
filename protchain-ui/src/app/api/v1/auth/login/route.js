@@ -7,7 +7,6 @@ export async function POST(request) {
     const url = `${BACKEND_URL}/api/v1/auth/login`;
     const body = await request.text();
 
-    console.log('Proxying login request to Go backend:', url);
 
     const resp = await fetch(url, {
       method: 'POST',
@@ -17,10 +16,8 @@ export async function POST(request) {
       body,
     });
 
-    console.log('Go backend login response status:', resp.status);
 
     const text = await resp.text();
-    console.log('Go backend login response:', text);
 
     let json;
     try { 
@@ -31,7 +28,6 @@ export async function POST(request) {
 
     return NextResponse.json(json, { status: resp.status });
   } catch (error) {
-    console.error('Proxy login failed:', error);
     return NextResponse.json({ error: 'Failed to authenticate with backend' }, { status: 500 });
   }
 }

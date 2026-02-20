@@ -60,13 +60,10 @@ export default function WorkflowStages({
           
           // Check for blockchain commits in localStorage (stage-specific)
           const recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
-          console.log('DEBUG: recentCommits from localStorage:', recentCommits);
-          console.log('DEBUG: recentCommits for workflowId:', recentCommits[workflowId]);
           
           if (recentCommits[workflowId]) {
             // Store stage-specific blockchain data
             data.blockchainByStage = recentCommits[workflowId];
-            console.log('DEBUG: blockchainByStage set to:', data.blockchainByStage);
             
             // Add general blockchain data for backward compatibility (use structure_preparation as default)
             if (recentCommits[workflowId].structure_preparation) {
@@ -100,7 +97,6 @@ export default function WorkflowStages({
           }
         }
       } catch (error) {
-        console.error('Failed to fetch workflow state:', error);
       }
     };
 
@@ -202,7 +198,6 @@ export default function WorkflowStages({
     setSuccess(null);
 
     try {
-      console.log('Processing structure for PDB ID:', pdbId);
       
       // Get the auth token
       const token = localStorage.getItem('token');
@@ -227,7 +222,6 @@ export default function WorkflowStages({
       }
 
       const results = await response.json();
-      console.log('Structure processing results:', results);
       
       setSuccess('Structure processed successfully!');
       setCompletedStages(prev => new Set([...prev, 'structure_preparation']));
@@ -249,10 +243,8 @@ export default function WorkflowStages({
             setCompletedStages(new Set(updatedWorkflowData.completed_stages));
           }
           
-          console.log('Workflow state refreshed after structure processing:', updatedWorkflowData);
         }
       } catch (refreshError) {
-        console.error('Failed to refresh workflow state:', refreshError);
       }
       
       if (onStructureAnalysisComplete) {
@@ -265,7 +257,6 @@ export default function WorkflowStages({
       }
       
     } catch (err) {
-      console.error('Structure processing error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -278,7 +269,6 @@ export default function WorkflowStages({
     setSuccess(null);
 
     try {
-      console.log('Starting binding site analysis for workflow:', workflowId);
       
       // Get the auth token
       const token = localStorage.getItem('token');
@@ -302,7 +292,6 @@ export default function WorkflowStages({
       }
 
       const results = await response.json();
-      console.log('Binding site analysis results:', results);
       
       setSuccess('Binding site analysis completed!');
       setCompletedStages(prev => new Set([...prev, 'binding_site_analysis']));
@@ -312,7 +301,6 @@ export default function WorkflowStages({
       }
       
     } catch (err) {
-      console.error('Binding site analysis error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -325,7 +313,6 @@ export default function WorkflowStages({
     setSuccess(null);
 
     try {
-      console.log('Starting REAL virtual screening for workflow:', workflowId);
       
       // Get the auth token
       const token = localStorage.getItem('token');
@@ -350,7 +337,6 @@ export default function WorkflowStages({
       }
 
       const results = await response.json();
-      console.log('REAL virtual screening results:', results);
       
       setSuccess(`Virtual screening completed! Found ${results.hits_found || 0} promising compounds.`);
       setCompletedStages(prev => new Set([...prev, 'virtual_screening']));
@@ -372,14 +358,11 @@ export default function WorkflowStages({
             setCompletedStages(new Set(updatedWorkflowData.completed_stages));
           }
           
-          console.log('Workflow state refreshed after virtual screening:', updatedWorkflowData);
         }
       } catch (refreshError) {
-        console.error('Failed to refresh workflow state:', refreshError);
       }
       
     } catch (err) {
-      console.error('Virtual screening error:', err);
       setError(err.message);
     } finally {
       setLoading(false);

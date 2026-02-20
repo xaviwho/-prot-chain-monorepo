@@ -24,7 +24,6 @@ export async function GET(request, { params }) {
         return NextResponse.json(workflowData);
       }
     } catch (backendError) {
-      console.log('Backend API not available, using local workflow data');
     }
 
     // Fallback: Check if we have local results for this workflow
@@ -32,10 +31,6 @@ export async function GET(request, { params }) {
     const uploadsDir = path.join(process.cwd(), '..', 'uploads', id);
     const resultsPath = path.join(uploadsDir, 'results.json');
     
-    console.log('DEBUG: Checking workflow', id);
-    console.log('DEBUG: uploadsDir:', uploadsDir);
-    console.log('DEBUG: resultsPath:', resultsPath);
-    console.log('DEBUG: resultsPath exists:', fs.existsSync(resultsPath));
     
     let workflow = {
       id: id,
@@ -55,20 +50,15 @@ export async function GET(request, { params }) {
     if (fs.existsSync(resultsPath)) {
       try {
         const resultsData = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
-        console.log('DEBUG: resultsData:', JSON.stringify(resultsData, null, 2));
-        console.log('DEBUG: has descriptors:', !!resultsData.details?.descriptors);
         
         if (resultsData.details?.descriptors) {
           completedStages.push('structure_preparation');
           stageResults.structure_preparation = resultsData;
           currentStage = 'binding_site_analysis';
-          console.log('DEBUG: Added structure_preparation to completed stages');
         }
       } catch (error) {
-        console.error('Error reading results file:', error);
       }
     } else {
-      console.log('DEBUG: Results file does not exist');
     }
     
     // Check binding site analysis completion
@@ -76,16 +66,13 @@ export async function GET(request, { params }) {
     if (fs.existsSync(bindingSiteResultsPath)) {
       try {
         const bindingSiteData = JSON.parse(fs.readFileSync(bindingSiteResultsPath, 'utf8'));
-        console.log('DEBUG: bindingSiteData found:', !!bindingSiteData.binding_sites);
         
         if (bindingSiteData.binding_sites && bindingSiteData.binding_sites.length > 0) {
           completedStages.push('binding_site_analysis');
           stageResults.binding_site_analysis = bindingSiteData;
           currentStage = 'virtual_screening';
-          console.log('DEBUG: Added binding_site_analysis to completed stages');
         }
       } catch (error) {
-        console.error('Error reading binding site results file:', error);
       }
     }
     
@@ -95,7 +82,6 @@ export async function GET(request, { params }) {
       try {
         blockchainData = JSON.parse(fs.readFileSync(blockchainPath, 'utf8'));
       } catch (error) {
-        console.error('Error reading blockchain data:', error);
       }
     }
     
@@ -114,7 +100,6 @@ export async function GET(request, { params }) {
     return NextResponse.json(workflow);
 
   } catch (error) {
-    console.error('Error fetching workflow:', error);
     return NextResponse.json(
       { error: 'Failed to fetch workflow data' },
       { status: 500 }
@@ -146,7 +131,6 @@ export async function PUT(request, { params }) {
         return NextResponse.json(updatedWorkflow);
       }
     } catch (backendError) {
-      console.log('Backend API not available for workflow update');
     }
 
     // Fallback: Return the updated data (in a real app, you'd save to a database)
@@ -157,7 +141,6 @@ export async function PUT(request, { params }) {
     });
 
   } catch (error) {
-    console.error('Error updating workflow:', error);
     return NextResponse.json(
       { error: 'Failed to update workflow' },
       { status: 500 }

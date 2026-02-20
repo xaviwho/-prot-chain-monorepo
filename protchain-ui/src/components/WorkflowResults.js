@@ -50,28 +50,12 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   const [selectedPocketId, setSelectedPocketId] = useState(null);
   const params = useParams();
   
-  console.log('🔗 WorkflowResults blockchain initialization:');
-  console.log('  - workflow.blockchain:', blockchainData);
-  console.log('  - blockchainCommitted:', blockchainCommitted);
-  console.log('  - ipfsHash:', ipfsHash);
-  console.log('  - blockchainTxHash:', blockchainTxHash);
-  console.log('  - verificationResult:', verificationResult);
-
-  console.log('🔍 WorkflowResults component received:');
-  console.log('  - results:', JSON.stringify(results, null, 2));
-  console.log('  - stage:', stage);
-  console.log('  - activeTab:', activeTab);
-  console.log('  - results type:', typeof results);
-  console.log('  - results is null?', results === null);
-  console.log('  - results is undefined?', results === undefined);
-
   // Initialize 3Dmol.js viewer for binding site visualization
   useEffect(() => {
     if (stage !== 'binding_site_analysis') return;
     if (!results?.binding_sites && !results?.binding_site_analysis?.binding_sites) return;
     if (!params?.id) return;
 
-    console.log('Initializing 3D viewer for binding site analysis');
 
     const loadAndInitialize3D = async () => {
       try {
@@ -91,7 +75,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
         // Get the viewer container
         const viewerElement = document.getElementById(`molviewer-${params.id}`);
         if (!viewerElement) {
-          console.error('Viewer container not found');
           return;
         }
 
@@ -99,7 +82,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
         viewerElement.innerHTML = '';
 
         // Fetch the PDB structure
-        console.log('Fetching PDB structure...');
         const response = await fetch(`/api/workflow/${params.id}/processed-structure`);
         if (!response.ok) {
           throw new Error(`Failed to fetch PDB: ${response.statusText}`);
@@ -110,7 +92,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           throw new Error('Empty PDB data received');
         }
 
-        console.log('Creating 3D viewer...');
         // Create the 3D viewer
         const viewer = window.$3Dmol.createViewer(viewerElement, { 
           backgroundColor: 'white',
@@ -125,7 +106,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
 
         // Get binding sites data
         const bindingSites = results?.binding_site_analysis?.binding_sites || results?.binding_sites || [];
-        console.log('Adding binding sites to viewer:', bindingSites.length);
         
         // Highlight binding sites
         bindingSites.forEach((site, index) => {
@@ -144,7 +124,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             });
             
             if (residueIds.length > 0) {
-              console.log(`Highlighting binding site ${index + 1} with residues:`, residueIds);
               // Add red spheres for binding site residues
               viewer.addStyle(
                 { resi: residueIds }, 
@@ -173,10 +152,8 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
         viewer.zoomTo();
         viewer.render();
         
-        console.log('3D viewer initialized successfully');
         
       } catch (error) {
-        console.error('Error initializing 3D viewer:', error);
         const viewerElement = document.getElementById(`molviewer-${params.id}`);
         if (viewerElement) {
           viewerElement.innerHTML = `
@@ -260,9 +237,7 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       };
       localStorage.setItem('recentBlockchainCommits', JSON.stringify(recentCommits));
       
-      console.log(`Stored blockchain commit info for ${stage}:`, recentCommits[params.id][stage]);
     } catch (error) {
-      console.error('Error committing to blockchain:', error);
       alert('Failed to commit results to blockchain: ' + error.message);
     } finally {
       setCommitLoading(false);
@@ -294,7 +269,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       const verifyData = await verifyResponse.json();
       setVerificationResult(verifyData);
     } catch (error) {
-      console.error('Error verifying results:', error);
       alert('Failed to verify results: ' + error.message);
     } finally {
       setVerifyLoading(false);
@@ -307,12 +281,9 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
 
   const handleDownloadResults = () => {
     if (!results) {
-      console.log('No results available for download');
       return;
     }
 
-    console.log('Download debug - results object:', results);
-    console.log('Download debug - stage:', stage);
 
     try {
       let csvContent = '';
@@ -322,7 +293,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
         const bindingSites = results.binding_sites || results.binding_site_analysis?.binding_sites || [];
         
         if (bindingSites.length === 0) {
-          console.log('No binding sites found for export');
           alert('No binding site data available for export');
           return;
         }
@@ -398,10 +368,8 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           });
         }
         
-        console.log('Structure data for export:', structureData);
         
         if (Object.keys(structureData).length === 0) {
-          console.log('No structure data found for export');
           alert('No structure data available for export');
           return;
         }
@@ -438,16 +406,11 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      console.log('CSV results downloaded successfully');
     } catch (error) {
-      console.error('Error downloading CSV results:', error);
     }
   };
 
   const renderStructurePreparation = (data) => {
-    console.log('Structure preparation data:', data);
-    console.log('Data type:', typeof data);
-    console.log('Data keys:', data ? Object.keys(data) : 'no data');
     let structureData = {};
 
     if (typeof data === 'object' && data !== null) {
@@ -456,28 +419,21 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
         try {
           // The data.data field might be a JSON string
           const parsedData = JSON.parse(data.data);
-          console.log('Parsed data.data from string:', parsedData);
           data = { ...data, data: parsedData };
         } catch (e) {
-          console.log('Could not parse data.data as JSON');
         }
       }
       
       // Check various possible data structures
       if (data.data && data.data.details && data.data.details.descriptors) {
-        console.log('Found data.data.details.descriptors format');
         structureData = data.data.details.descriptors;
       } else if (data.details && data.details.descriptors) {
-        console.log('Found bioapi format with details.descriptors');
         structureData = data.details.descriptors;
       } else if (data.descriptors) {
-        console.log('Found direct descriptors format');
         structureData = data.descriptors;
       } else if (data.STRUCTURE_PREPARATION && data.STRUCTURE_PREPARATION.descriptors) {
-        console.log('Found STRUCTURE_PREPARATION.descriptors format');
         structureData = data.STRUCTURE_PREPARATION.descriptors;
       } else if (data.atom_count || data.residue_count || data.chain_count) {
-        console.log('Found direct properties format');
         structureData = {
           num_atoms: data.atom_count,
           num_residues: data.residue_count,
@@ -487,16 +443,13 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           has_ligands: data.has_ligands,
         };
       } else if (data.structure_preparation && data.structure_preparation.descriptors) {
-        console.log('Found structure_preparation.descriptors format');
         structureData = data.structure_preparation.descriptors;
       } else if (data.data) {
         // If data.data exists but doesn't have the expected structure, check if it needs parsing
-        console.log('Checking data.data:', data.data);
         if (typeof data.data === 'string') {
           try {
             // Try to parse if it's a JSON string
             const parsed = JSON.parse(data.data);
-            console.log('Parsed data.data from string:', parsed);
             if (parsed.details && parsed.details.descriptors) {
               structureData = parsed.details.descriptors;
             } else if (parsed.descriptors) {
@@ -505,7 +458,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
               structureData = parsed;
             }
           } catch (e) {
-            console.log('Could not parse data.data as JSON, using directly');
             structureData = data.data;
           }
         } else {
@@ -513,12 +465,10 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
         }
       } else {
         // Last resort - use all the data we have
-        console.log('Using all available data');
         structureData = { ...data };
         
         // If data.data exists and is an object, merge it in
         if (data.data && typeof data.data === 'object') {
-          console.log('Merging data.data into structureData');
           structureData = { ...structureData, ...data.data };
           // Remove the nested data field to avoid duplication
           delete structureData.data;
@@ -540,13 +490,10 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
     if (typeof structureData === 'string') {
       try {
         structureData = JSON.parse(structureData);
-        console.log('Parsed structureData from string:', structureData);
       } catch (e) {
-        console.log('Could not parse structureData as JSON');
       }
     }
 
-    console.log('Extracted structure data:', structureData);
     
 
     if (Object.keys(structureData).length === 0) {
@@ -583,16 +530,13 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                   // Extract and flatten the data properly
                   const rows = {};
                   
-                  console.log('Building rows from structureData:', structureData);
                   
                   // If structureData has a 'data' field, extract from it
                   if (structureData.data && typeof structureData.data === 'object') {
-                    console.log('Extracting from nested data field');
                     const nestedData = structureData.data;
                     
                     // Extract details and descriptors if they exist
                     if (nestedData.details) {
-                      console.log('Details type:', typeof nestedData.details, nestedData.details);
                       // If details is a string, try to parse it
                       if (typeof nestedData.details === 'string') {
                         try {
@@ -605,7 +549,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                       }
                     }
                     if (nestedData.descriptors) {
-                      console.log('Descriptors type:', typeof nestedData.descriptors, nestedData.descriptors);
                       // If descriptors is a string, try to parse it
                       if (typeof nestedData.descriptors === 'string') {
                         try {
@@ -631,7 +574,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                     }
                   } else {
                     // No nested data field, use structureData directly
-                    console.log('Using structureData directly');
                     Object.entries(structureData).forEach(([key, value]) => {
                       const keyLower = key.toLowerCase();
                       
@@ -660,7 +602,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                     rows['Success'] = structureData.success;
                   }
                   
-                  console.log('Final rows to display:', rows);
 
                   return Object.entries(rows).map(([key, value]) => (
                     <TableRow key={key}>
@@ -677,7 +618,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                                 (value.startsWith('[') && value.endsWith(']'))) {
                               try {
                                 displayValue = JSON.parse(value);
-                                console.log('Parsed nested JSON:', displayValue);
                               } catch (e) {
                                 // Not valid JSON, use as is
                                 displayValue = value;
@@ -685,7 +625,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                             }
                             // Also check if it's "[object Object]" string
                             else if (value === '[object Object]') {
-                              console.warn('Found [object Object] string, data was improperly stringified');
                               displayValue = 'Data not properly formatted';
                             }
                           }
@@ -1284,7 +1223,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   );
 
   const renderVirtualScreeningResults = (data) => {
-    console.log('Rendering Virtual Screening Results with data:', data);
 
     if (!data || data.status !== 'completed') {
       return (
@@ -1346,7 +1284,6 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   };
 
   const renderStageResults = () => {
-    console.log('Rendering results for stage:', stage, 'with data:', results);
 
     if (!results) {
       return <Typography>No results available for this workflow.</Typography>;

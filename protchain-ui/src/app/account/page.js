@@ -559,7 +559,7 @@ export default function AccountPage() {
                     <TextField
                       fullWidth
                       label="API Key"
-                      value={apiKeyVisible ? "pk_live_51234567890abcdef" : "••••••••••••••••••••"}
+                      value={apiKeyVisible ? "API keys coming soon" : "••••••••••••••••••••"}
                       InputProps={{
                         readOnly: true,
                         endAdornment: (
@@ -587,22 +587,9 @@ export default function AccountPage() {
               <Card>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2 }}>Active Sessions</Typography>
-                  <List>
-                    <ListItem>
-                      <ListItemText
-                        primary="Current Session (Windows - Chrome)"
-                        secondary="Active now • IP: 192.168.1.100"
-                      />
-                      <Chip label="Current" color="success" size="small" />
-                    </ListItem>
-                    <ListItem>
-                      <ListItemText
-                        primary="Mobile Session (iPhone - Safari)"
-                        secondary="2 hours ago • IP: 192.168.1.101"
-                      />
-                      <Button size="small" color="error">Revoke</Button>
-                    </ListItem>
-                  </List>
+                  <Typography variant="body2" color="text.secondary">
+                    Session management coming soon.
+                  </Typography>
                 </CardContent>
               </Card>
             </Grid>

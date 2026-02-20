@@ -49,7 +49,6 @@ export async function POST(request) {
     // Upload to IPFS using direct API call
     const hash = await uploadToIPFS(jsonData);
 
-    console.log(`Uploaded workflow ${workflowId} results to IPFS:`, hash);
 
     return NextResponse.json({
       success: true,
@@ -59,7 +58,6 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('IPFS upload error:', error);
     
     // Handle IPFS connection errors gracefully
     if (error.code === 'ECONNREFUSED') {

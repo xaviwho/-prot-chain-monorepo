@@ -31,8 +31,6 @@ export async function POST(request, { params }) {
     const pdbPath = getWorkflowFilePath(id, 'processed.pdb');
     const resultsPath = getWorkflowFilePath(id, 'results.json');
     
-    console.log(`Running LIGSITE binding site detection for workflow: ${id}`);
-    console.log(`Using PDB file: ${normalizePath(pdbPath)}`);
     
     // Check if the files exist
     if (!fs.existsSync(pdbPath) || !fs.existsSync(resultsPath)) {
@@ -50,24 +48,18 @@ export async function POST(request, { params }) {
     try {
       // Determine the path to the Python script
       const scriptPath = path.resolve(process.cwd(), '..', 'backend', 'binding_site_ligsite.py');
-      console.log(`LIGSITE script path: ${scriptPath}`);
       
       // Convert Windows path to WSL path if needed
       const wslPdbPath = pdbPath.replace(/^([A-Za-z]):\\/, '/mnt/$1/').replace(/\\/g, '/');
       const wslOutputDir = workflowDir.replace(/^([A-Za-z]):\\/, '/mnt/$1/').replace(/\\/g, '/');
       
-      console.log(`WSL PDB path: ${wslPdbPath}`);
-      console.log(`WSL output directory: ${wslOutputDir}`);
       
       // Run the Python script using WSL
       const command = `wsl python3 "${scriptPath.replace(/^([A-Za-z]):\\/, '/mnt/$1/').replace(/\\/g, '/')}" "${wslPdbPath}" "${wslOutputDir}"`;
-      console.log(`Running command: ${command}`);
       
       const { stdout, stderr } = await execAsync(command);
       
-      console.log('LIGSITE stdout:', stdout);
       if (stderr) {
-        console.error('LIGSITE stderr:', stderr);
       }
       
       // Check if binding_sites.json was created
@@ -87,7 +79,6 @@ export async function POST(request, { params }) {
         resultsData.binding_site_analysis.timestamp = new Date().toISOString();
         
         fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
-        console.log(`Updated results file with LIGSITE binding site information`);
         
         // Return the binding sites
         return NextResponse.json({
@@ -96,16 +87,13 @@ export async function POST(request, { params }) {
           binding_sites: bindingSitesData.binding_sites
         });
       } else {
-        console.error('LIGSITE did not generate binding_sites.json');
         throw new Error('LIGSITE binding site detection failed to generate results');
       }
     } catch (execError) {
-      console.error('Error executing LIGSITE:', execError);
       throw new Error(`LIGSITE execution failed: ${execError.message}`);
     }
     
   } catch (error) {
-    console.error('Error in LIGSITE binding site detection:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to run LIGSITE binding site detection' },
       { status: 500 }

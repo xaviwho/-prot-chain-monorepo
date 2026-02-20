@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-// PureChain configuration
-const PURECHAIN_RPC_URL = 'https://purechainnode.com:8547';
+// PureChain configuration from environment
+const PURECHAIN_RPC_URL = process.env.BLOCKCHAIN_RPC || 'https://purechainnode.com:8547';
 
 export async function POST(request) {
   try {
@@ -16,7 +16,6 @@ export async function POST(request) {
       );
     }
 
-    console.log(`Verifying results for workflow ${workflowId}...`);
 
     // Verify blockchain transaction using direct RPC calls
     let blockchainData = null;
@@ -46,12 +45,9 @@ export async function POST(request) {
           status: receiptData.result.status,
           verified: true
         };
-        console.log('Blockchain transaction verified:', transactionHash);
       } else {
-        console.warn('Transaction not found on blockchain:', transactionHash);
       }
     } catch (blockchainError) {
-      console.warn('Blockchain verification failed:', blockchainError.message);
     }
 
     // Verify IPFS data
@@ -68,12 +64,9 @@ export async function POST(request) {
           verified: true,
           content: ipfsContent
         };
-        console.log('IPFS data verified:', ipfsHash);
       } else {
-        console.warn('IPFS data not found:', ipfsHash);
       }
     } catch (ipfsError) {
-      console.warn('IPFS verification failed:', ipfsError.message);
     }
 
     // Save verification data to blockchain.json
@@ -91,10 +84,8 @@ export async function POST(request) {
         };
         
         fs.writeFileSync(blockchainPath, JSON.stringify(existingData, null, 2));
-        console.log('Verification data saved to:', blockchainPath);
       }
     } catch (saveError) {
-      console.error('Failed to save verification data:', saveError);
     }
 
     // Return successful verification
@@ -108,7 +99,6 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Verification error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to verify results' },
       { status: 500 }

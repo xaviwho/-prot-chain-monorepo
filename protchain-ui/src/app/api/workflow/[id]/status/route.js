@@ -11,7 +11,6 @@ export async function GET(request, { params }) {
   try {
     // First try to fetch from backend
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
-    console.log('Fetching workflow status from:', `${apiUrl}/api/v1/workflows/${id}/status`);
     
     try {
       const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/status`);
@@ -22,9 +21,7 @@ export async function GET(request, { params }) {
       }
       
       // If backend returns "Workflow not found", we'll fall back to local files
-      console.log(`Backend couldn't find workflow ${id}, falling back to local files`);
     } catch (backendError) {
-      console.log(`Error connecting to backend: ${backendError.message}, falling back to local files`);
     }
     
     // Fallback: Check if we have local files for this workflow
@@ -39,7 +36,6 @@ export async function GET(request, { params }) {
         const resultsContent = await fs.readFile(resultsPath, 'utf-8');
         resultsData = JSON.parse(resultsContent);
       } catch (e) {
-        console.log(`No results.json found for workflow ${id} or invalid JSON`);
       }
       
       // Determine workflow status based on local files
@@ -82,18 +78,15 @@ export async function GET(request, { params }) {
         ]
       };
       
-      console.log(`Returning local status for workflow ${id}`);
       return NextResponse.json(localStatus);
     } catch (fsError) {
       // If we can't access the workflow directory, it truly doesn't exist
-      console.error(`Workflow directory ${workflowDir} not found:`, fsError);
       return NextResponse.json(
         { error: 'Workflow not found locally or on backend' },
         { status: 404 }
       );
     }
   } catch (error) {
-    console.error('Error in workflow status API:', error);
     return NextResponse.json(
       { error: 'Failed to fetch workflow status' },
       { status: error.response?.status || 500 }

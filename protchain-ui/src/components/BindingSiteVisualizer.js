@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Typography, Button, Slider, FormControl, InputLabel, Select, MenuItem, Paper, Grid, CircularProgress } from '@mui/material';
-import * as Papa from 'papaparse';
 
 const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPocketId = null, onPocketSelect = null }) => {
   const viewerRef = useRef(null);
@@ -60,24 +59,20 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
     const initializeViewer = () => {
       // Check if container exists
       if (!viewerRef.current) {
-        console.error('Viewer container ref not available');
         return;
       }
 
       // Check if container is in DOM
       if (!document.contains(viewerRef.current)) {
-        console.error('Viewer container not in DOM');
         return;
       }
 
       try {
-        console.log('Creating 3Dmol viewer...');
         const newViewer = window.$3Dmol.createViewer(viewerRef.current, {
           defaultcolors: window.$3Dmol.rasmolElementColors
         });
         
         if (!newViewer) {
-          console.error('Failed to create 3Dmol viewer instance');
           return;
         }
 
@@ -102,9 +97,7 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
             newViewer.render();
             setIsLoading(false);
             
-            console.log('PDB structure loaded successfully');
           } catch (error) {
-            console.error('Failed to load PDB structure:', error);
             setIsLoading(false);
           }
         };
@@ -113,7 +106,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
         setViewer(newViewer);
         
       } catch (error) {
-        console.error('Error initializing 3Dmol viewer:', error);
         setIsLoading(false);
       }
     };
@@ -129,7 +121,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
           if (viewerRef.current) {
             initializeViewer();
           } else {
-            console.error('Viewer container still not available after timeout');
           }
         }, 500);
       }
@@ -194,7 +185,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
   // Handle site click without breaking the viewer
   const handleSiteClick = (siteId) => {
     setSelectedSite(siteId);
-    console.log(`Clicked on binding site ${siteId}`);
     
     // Notify parent component
     if (onPocketSelect) {
@@ -235,7 +225,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
     );
     
     if (site && site.center) {
-      console.log('Focusing on site:', siteId, 'at coordinates:', site.center);
       
       // Highlight the selected binding site by making it more prominent
       updateVisualizationWithSelection(siteId);
@@ -247,7 +236,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
       viewer.render();
       
       setSelectedSite(siteId);
-      console.log('Camera focused on binding site', siteId);
     }
   };
 
@@ -255,7 +243,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
   const updateVisualizationWithSelection = (selectedSiteId) => {
     if (!viewer || !bindingSites || bindingSites.length === 0) return;
     
-    console.log('Updating visualization with', bindingSites.length, 'binding sites');
     
     // Clear ALL existing shapes but keep the protein structure
     viewer.removeAllShapes();
@@ -279,7 +266,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
         const scoreScale = site.druggability_score ? Math.max(site.druggability_score, 0.5) : 1.0;
         const radius = baseRadius * volumeScale * scoreScale;
         
-        console.log(`Adding sphere for site ${siteId} at (${x}, ${y}, ${z}) with radius ${radius.toFixed(1)}`);
         
         // Add binding site sphere
         viewer.addSphere({
@@ -295,7 +281,6 @@ const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPock
       }
     });
     
-    console.log(`Added ${sitesToShow.length} spheres to viewer`);
     viewer.render();
   };
 

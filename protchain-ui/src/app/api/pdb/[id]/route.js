@@ -19,7 +19,6 @@ export async function GET(request, { params }) {
       },
     });
   } catch (error) {
-    console.error('Error fetching PDB:', error);
     return NextResponse.json(
       { error: 'Failed to fetch PDB file' },
       { status: 500 }

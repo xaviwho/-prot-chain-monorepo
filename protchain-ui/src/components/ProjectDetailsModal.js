@@ -33,7 +33,6 @@ export default function ProjectDetailsModal({ project, onClose }) {
       setNewMilestone('');
       // Refresh project data
     } catch (error) {
-      console.error('Error adding milestone:', error);
     }
   }
 

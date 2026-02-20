@@ -43,7 +43,6 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error('Preferences fetch error:', error);
     return NextResponse.json({ 
       error: 'Failed to fetch preferences' 
     }, { status: 500 });
@@ -98,7 +97,6 @@ export async function PUT(request) {
     });
 
   } catch (error) {
-    console.error('Preferences update error:', error);
     return NextResponse.json({ 
       error: 'Failed to update preferences' 
     }, { status: 500 });

@@ -12,7 +12,6 @@ export async function GET(request, { params }) {
     const pdbId = id.toUpperCase();
 
     try {
-        console.log(`Fetching real binding pockets for ${pdbId}...`);
 
         // Step 1: Fetch PDB file from RCSB
         let pdbFile;
@@ -28,7 +27,6 @@ export async function GET(request, { params }) {
         }
 
         // Step 2: Call BioAPI for real geometric cavity detection
-        console.log(`Calling BioAPI for binding site detection...`);
         const response = await fetch(`${API_URL}/api/v1/structure/binding-sites/detect`, {
             method: 'POST',
             headers: {
@@ -41,14 +39,12 @@ export async function GET(request, { params }) {
         });
 
         if (!bioApiResponse.ok) {
-            console.error(`BioAPI failed for ${pdbId}: ${bioApiResponse.status}`);
             return NextResponse.json({ error: 'Failed to detect binding sites' }, { status: 500 });
         }
 
         const bioApiData = await bioApiResponse.json();
         const bindingSites = bioApiData.binding_sites || [];
 
-        console.log(`✅ Detected ${bindingSites.length} real binding pockets for ${pdbId}`);
 
         // Step 3: Format binding sites for Molstar viewer
         const formattedBindingSites = bindingSites.map((site, index) => ({
@@ -79,7 +75,6 @@ export async function GET(request, { params }) {
         });
 
     } catch (error) {
-        console.error('Error in binding pockets API route:', error);
         return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
     }
 }

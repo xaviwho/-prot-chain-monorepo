@@ -5,42 +5,28 @@ import (
 	"net/http"
 	"strings"
 
+	"protchain/internal/dto"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		log.Printf("AuthMiddleware: Processing request to %s %s", c.Request.Method, c.Request.URL.Path)
-		secretPreview := jwtSecret
-		if len(jwtSecret) > 10 {
-			secretPreview = jwtSecret[:10] + "..."
-		}
-		log.Printf("AuthMiddleware: Using JWT secret: %s", secretPreview)
-		
 		authHeader := c.GetHeader("Authorization")
-		log.Printf("AuthMiddleware: Authorization header: %s", authHeader)
-		
+
 		if authHeader == "" {
-			log.Printf("AuthMiddleware: No Authorization header found")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Success: false, Error: "Authorization header required"})
 			c.Abort()
 			return
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
-			log.Printf("AuthMiddleware: Invalid Bearer token format")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Bearer token required"})
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Success: false, Error: "Bearer token required"})
 			c.Abort()
 			return
 		}
-		
-		tokenPreview := tokenString
-		if len(tokenString) > 20 {
-			tokenPreview = tokenString[:20] + "..."
-		}
-		log.Printf("AuthMiddleware: Token string: %s", tokenPreview)
 
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -50,26 +36,36 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
-			log.Printf("AuthMiddleware: Invalid token: %v", err)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Success: false, Error: "Invalid token"})
 			c.Abort()
 			return
 		}
 
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			log.Printf("AuthMiddleware: Valid token received. Claims: %+v", claims)
-			userID := int(claims["user_id"].(float64))
-			email := claims["email"].(string)
-			log.Printf("AuthMiddleware: Extracted user_id: %d, email: %s", userID, email)
-			c.Set("user_id", userID)
-			c.Set("email", email)
-		} else {
-			log.Printf("AuthMiddleware: Invalid token claims type: %T", token.Claims)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Success: false, Error: "Invalid token claims"})
 			c.Abort()
 			return
 		}
 
+		userIDFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			log.Printf("AuthMiddleware: user_id claim is not a number")
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Success: false, Error: "Invalid token: missing user_id"})
+			c.Abort()
+			return
+		}
+
+		email, ok := claims["email"].(string)
+		if !ok {
+			log.Printf("AuthMiddleware: email claim is not a string")
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Success: false, Error: "Invalid token: missing email"})
+			c.Abort()
+			return
+		}
+
+		c.Set("user_id", int(userIDFloat))
+		c.Set("email", email)
 		c.Next()
 	}
 }

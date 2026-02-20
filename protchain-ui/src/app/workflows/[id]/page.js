@@ -64,7 +64,6 @@ export default function WorkflowDetailPage() {
         
         // Handle different response structures
         const workflowData = responseData.data || responseData;
-        console.log('Fetched workflow data:', workflowData);
         
         setWorkflow(workflowData);
         setStage(workflowData.stage || 'structure_preparation');
@@ -77,7 +76,6 @@ export default function WorkflowDetailPage() {
           description: getProteinDescription(proteinName)
         });
       } catch (err) {
-        console.error('Error fetching workflow:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -129,7 +127,6 @@ export default function WorkflowDetailPage() {
           : workflow.results;
         pdbId = resultsData?.pdb_id || resultsData?.pdbId || resultsData?.Pdb_Id;
       } catch (e) {
-        console.log('Could not parse workflow results for PDB ID');
       }
     }
     
@@ -155,14 +152,12 @@ export default function WorkflowDetailPage() {
   };
 
   const handleStructureAnalysisComplete = (analysisResults) => {
-    console.log('Structure analysis completed:', analysisResults);
     setResults(analysisResults);
     setStage('structure_preparation');
     setActiveTab(1); // Switch to results tab
   };
 
   const handleBindingSiteAnalysisComplete = (analysisResults) => {
-    console.log('Binding site analysis completed:', analysisResults);
     setResults(analysisResults);
     setStage('binding_site_analysis');
     setActiveTab(1); // Switch to results tab
@@ -245,7 +240,6 @@ export default function WorkflowDetailPage() {
                           return date.toLocaleDateString();
                         }
                       } catch (e) {
-                        console.log('Error parsing date:', e);
                       }
                     }
                     return new Date().toLocaleDateString(); // Use current date as fallback

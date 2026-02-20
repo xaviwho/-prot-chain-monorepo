@@ -30,7 +30,6 @@ export async function GET(request, { params }) {
     });
 
   } catch (error) {
-    console.error('PDB file retrieval error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to retrieve PDB file' },
       { status: 500 }

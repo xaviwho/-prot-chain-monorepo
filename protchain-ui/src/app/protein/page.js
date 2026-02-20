@@ -124,8 +124,6 @@ export default function ProteinScreen() {
             }
 
             const { data: proteinData, blockchain_info } = response.metadata;
-            console.log('Protein data:', proteinData);
-            console.log('Blockchain info:', blockchain_info);
             
             setMetadata(proteinData);
             setBlockchainInfo({
@@ -139,7 +137,6 @@ export default function ProteinScreen() {
             initializeScene(pdbBlob);
         } catch (err) {
             setError(err.message || 'Error fetching PDB file.');
-            console.error('Error fetching PDB file:', err);
         }
     };
 

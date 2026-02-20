@@ -1,3 +1,4 @@
+import logging
 import requests
 import tempfile
 import os
@@ -6,11 +7,13 @@ from Bio import PDB
 from Bio.PDB import PDBParser
 from typing import Dict, Any, List, Optional
 from scipy.spatial.distance import cdist
-import random
+
+logger = logging.getLogger(__name__)
 
 class RealBindingSiteDetection:
     def __init__(self):
         self.parser = PDBParser(QUIET=True)
+        self._rng = np.random.default_rng(seed=42)
         
     def detect_binding_sites(self, pdb_id: str, structure_data: Optional[str] = None) -> List[Dict[str, Any]]:
         """Detect binding sites using real geometric cavity detection"""
@@ -28,7 +31,7 @@ class RealBindingSiteDetection:
             return binding_sites
             
         except Exception as e:
-            print(f"Binding site detection error for {pdb_id}: {str(e)}")
+            logger.error(f"Binding site detection error for {pdb_id}: {str(e)}")
             return []
     
     def _download_and_parse_pdb(self, pdb_id: str):
@@ -50,7 +53,7 @@ class RealBindingSiteDetection:
             return structure
             
         except Exception as e:
-            print(f"PDB download error: {str(e)}")
+            logger.error(f"PDB download error: {str(e)}")
             return None
     
     def _parse_structure_data(self, structure_data: str, pdb_id: str):
@@ -66,7 +69,7 @@ class RealBindingSiteDetection:
             return structure
             
         except Exception as e:
-            print(f"Structure parsing error: {str(e)}")
+            logger.error(f"Structure parsing error: {str(e)}")
             return None
     
     def _geometric_cavity_detection(self, structure, pdb_id: str) -> List[Dict[str, Any]]:
@@ -106,7 +109,7 @@ class RealBindingSiteDetection:
                 grid_spacing = 1.5
                 max_grid_points = 50000
             
-            print(f"Using grid spacing {grid_spacing}Å for {num_atoms} atoms")
+            logger.info(f"Using grid spacing {grid_spacing}Å for {num_atoms} atoms")
             
             # Create 3D grid around protein
             min_coords = np.min(protein_coords, axis=0) - 5.0
@@ -121,20 +124,18 @@ class RealBindingSiteDetection:
             
             if total_grid_points > max_grid_points:
                 # Use random sampling for very large grids
-                print(f"Large grid detected ({total_grid_points} points), using random sampling")
-                grid_points = []
-                for _ in range(max_grid_points):
-                    x = random.uniform(min_coords[0], max_coords[0])
-                    y = random.uniform(min_coords[1], max_coords[1])
-                    z = random.uniform(min_coords[2], max_coords[2])
-                    grid_points.append([x, y, z])
-                grid_points = np.array(grid_points)
+                logger.info(f"Large grid detected ({total_grid_points} points), using random sampling")
+                grid_points = np.column_stack([
+                    self._rng.uniform(min_coords[0], max_coords[0], size=max_grid_points),
+                    self._rng.uniform(min_coords[1], max_coords[1], size=max_grid_points),
+                    self._rng.uniform(min_coords[2], max_coords[2], size=max_grid_points),
+                ])
             else:
                 # Generate full grid
                 xx, yy, zz = np.meshgrid(x_points, y_points, z_points)
                 grid_points = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
             
-            print(f"Generated {len(grid_points)} grid points")
+            logger.info(f"Generated {len(grid_points)} grid points")
             
             # Find cavity points (points not too close to protein atoms)
             min_distance = 2.5  # Minimum distance from protein atoms
@@ -154,7 +155,7 @@ class RealBindingSiteDetection:
                 cavity_points.extend(chunk[valid_mask])
             
             cavity_points = np.array(cavity_points)
-            print(f"Found {len(cavity_points)} cavity points")
+            logger.info(f"Found {len(cavity_points)} cavity points")
             
             if len(cavity_points) == 0:
                 return []
@@ -162,11 +163,11 @@ class RealBindingSiteDetection:
             # Cluster cavity points into binding sites
             binding_sites = self._cluster_cavity_points(cavity_points, protein_coords, atom_info)
             
-            print(f"Detected {len(binding_sites)} binding sites for {pdb_id}")
+            logger.info(f"Detected {len(binding_sites)} binding sites for {pdb_id}")
             return binding_sites
             
         except Exception as e:
-            print(f"Geometric cavity detection error: {str(e)}")
+            logger.error(f"Geometric cavity detection error: {str(e)}")
             return []
     
     def _cluster_cavity_points(self, cavity_points: np.ndarray, protein_coords: np.ndarray, atom_info: List[Dict]) -> List[Dict[str, Any]]:
@@ -177,8 +178,8 @@ class RealBindingSiteDetection:
             
             # For very large cavity point sets, use subsampling
             if len(cavity_points) > 10000:
-                print(f"Large cavity point set ({len(cavity_points)}), subsampling to 5000 points")
-                indices = np.random.choice(len(cavity_points), 5000, replace=False)
+                logger.info(f"Large cavity point set ({len(cavity_points)}), subsampling to 5000 points")
+                indices = self._rng.choice(len(cavity_points), 5000, replace=False)
                 cavity_points = cavity_points[indices]
             
             # Protein size-aware clustering
@@ -220,7 +221,7 @@ class RealBindingSiteDetection:
                 if len(cluster_points) >= min_cluster_size:
                     clusters.append(np.array(cluster_points))
             
-            print(f"Found {len(clusters)} cavity clusters")
+            logger.info(f"Found {len(clusters)} cavity clusters")
             
             # Convert clusters to binding site descriptions
             binding_sites = []
@@ -276,7 +277,7 @@ class RealBindingSiteDetection:
             return viable_sites
             
         except Exception as e:
-            print(f"Clustering error: {str(e)}")
+            logger.error(f"Clustering error: {str(e)}")
             return []
     
     def _find_nearby_residues(self, center: np.ndarray, protein_coords: np.ndarray, atom_info: List[Dict], radius: float = 6.0) -> List[Dict[str, Any]]:
@@ -312,7 +313,7 @@ class RealBindingSiteDetection:
             return nearby_residues
             
         except Exception as e:
-            print(f"Nearby residues error: {str(e)}")
+            logger.error(f"Nearby residues error: {str(e)}")
             return []
     
     def _calculate_druggability_score(self, cluster_points: np.ndarray, nearby_residues: List[Dict]) -> float:
@@ -376,7 +377,7 @@ class RealBindingSiteDetection:
             return min(final_score, 1.0)
             
         except Exception as e:
-            print(f"Druggability calculation error: {str(e)}")
+            logger.error(f"Druggability calculation error: {str(e)}")
             return 0.1
     
     def _calculate_hydrophobicity(self, nearby_residues: List[Dict]) -> float:
@@ -390,7 +391,8 @@ class RealBindingSiteDetection:
             
             return hydrophobic_count / len(nearby_residues)
             
-        except:
+        except Exception as e:
+            logger.error(f"Hydrophobicity calculation error: {e}")
             return 0.0
     
     def _calculate_surface_accessibility(self, center: np.ndarray, protein_coords: np.ndarray) -> float:
@@ -411,5 +413,6 @@ class RealBindingSiteDetection:
             else:
                 return 0.9  # Highly accessible
                 
-        except:
+        except Exception as e:
+            logger.error(f"Surface accessibility calculation error: {e}")
             return 0.5

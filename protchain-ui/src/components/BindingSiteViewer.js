@@ -48,7 +48,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
           setError(null);
         }
       } catch (err) {
-        console.error('Error fetching binding sites:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -64,17 +63,14 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
     if (!workflowId) return false;
     
     try {
-      console.log('Validating workflow files...');
       const response = await fetch(`/api/workflow/${workflowId}/validate-files`);
       
       const data = await response.json();
       
       if (!response.ok) {
-        console.error('Failed to validate workflow files:', data.error);
         return false;
       }
       
-      console.log('Workflow validation result:', data);
       
       // Update workflow status based on validation results
       setWorkflowStatus({
@@ -90,7 +86,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       
       return data.exists && data.hasInputFile && data.hasProcessedFile && data.hasResultsFile;
     } catch (err) {
-      console.error('Error validating workflow files:', err);
       return false;
     }
   };
@@ -103,14 +98,12 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       // Validate and prepare workflow first
       const isReady = await validateAndPrepareWorkflow();
       if (!isReady) {
-        console.log('Workflow is not ready for binding site analysis');
         return;
       }
       
       setAnalyzing(true);
       setError(null);
       
-      console.log('Running binding site analysis...');
       const response = await fetch(`/api/workflow/${workflowId}/binding-site-analysis`, {
         method: 'POST',
       });
@@ -121,7 +114,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
         throw new Error(data.error || 'Failed to run binding site analysis');
       }
       
-      console.log('Binding site analysis completed:', data);
       
       // Fetch the updated binding sites
       const sitesResponse = await fetch(`/api/workflow/${workflowId}/binding-sites`);
@@ -131,10 +123,8 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
         setBindingSites(sitesData.binding_sites || []);
         setError(null);
       } else {
-        console.error('Error fetching binding sites after analysis:', sitesData.error);
       }
     } catch (err) {
-      console.error('Error running binding site analysis:', err);
       setError(err.message);
     } finally {
       setAnalyzing(false);
@@ -149,14 +139,12 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       // Validate and prepare workflow first
       const isReady = await validateAndPrepareWorkflow();
       if (!isReady) {
-        console.log('Workflow is not ready for binding site analysis');
         return;
       }
       
       setAnalyzing(true);
       setError(null);
       
-      console.log('Running direct binding site analysis...');
       const response = await fetch(`/api/workflow/${workflowId}/direct-binding-site-analysis`, {
         method: 'POST',
       });
@@ -167,11 +155,9 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
         throw new Error(data.error || 'Failed to run binding site analysis');
       }
       
-      console.log('Direct binding site analysis completed:', data);
       setBindingSites(data.binding_sites || []);
       
     } catch (err) {
-      console.error('Error running direct binding site analysis:', err);
       setError(err.message);
     } finally {
       setAnalyzing(false);
@@ -186,7 +172,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       setAnalyzing(true);
       setError(null);
       
-      console.log('Running structure preparation...');
       const response = await fetch(`/api/workflow/${workflowId}/structure-preparation`, {
         method: 'POST',
       });
@@ -197,13 +182,11 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
         throw new Error(data.error || 'Failed to run structure preparation');
       }
       
-      console.log('Structure preparation completed:', data);
       
       // Re-validate workflow files after structure preparation
       await validateWorkflowFiles();
       
     } catch (err) {
-      console.error('Error running structure preparation:', err);
       setError(err.message);
     } finally {
       setAnalyzing(false);
@@ -215,7 +198,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
     if (!workflowId) return;
     
     try {
-      console.log(`Downloading ${filename}...`);
       const response = await fetch(`/api/workflow/${workflowId}/download/${filename}`);
       
       if (!response.ok) {
@@ -240,7 +222,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       document.body.removeChild(a);
       
     } catch (err) {
-      console.error(`Error downloading ${filename}:`, err);
       setError(err.message);
     }
   };
@@ -251,7 +232,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
     
     try {
       // Validate workflow files first
-      console.log('Validating workflow before analysis...');
       const response = await fetch(`/api/workflow/${workflowId}/validate-files`);
       const data = await response.json();
       
@@ -259,7 +239,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
         throw new Error(data.error || 'Failed to validate workflow files');
       }
       
-      console.log('Workflow validation result:', data);
       setWorkflowStatus({
         exists: data.exists,
         hasInputFile: data.hasInputFile,
@@ -271,7 +250,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       
       // Check if workflow needs registration
       if (!data.isRegistered) {
-        console.log('Workflow needs registration, attempting to register...');
         setNeedsRegistration(true);
         
         // Try to register the workflow automatically
@@ -282,11 +260,9 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
         const regData = await regResponse.json();
         
         if (!regResponse.ok) {
-          console.error('Auto-registration failed:', regData.error);
           throw new Error('Workflow registration failed. Please register the workflow manually.');
         }
         
-        console.log('Workflow registered successfully:', regData);
         setNeedsRegistration(false);
       }
       
@@ -297,7 +273,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       
       // If we don't have processed files, we need to run structure preparation
       if (!data.hasProcessedFile || !data.hasResultsFile) {
-        console.log('Structure preparation needed before binding site analysis');
         throw new Error('Structure preparation needs to be completed before running binding site analysis.');
       }
       
@@ -315,7 +290,6 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
       
       return true; // Workflow is valid and ready for binding site analysis
     } catch (err) {
-      console.error('Error validating workflow:', err);
       setError(err.message);
       return false;
     }
@@ -432,14 +406,12 @@ const BindingSiteViewer = ({ workflowId, pdbUrl, style = {} }) => {
         }
   
         setUploadSuccess(true);
-        console.log('File uploaded successfully:', data);
         
         // Trigger validation after successful upload
         if (onUploadComplete) {
           setTimeout(onUploadComplete, 500); // Small delay to ensure file is processed
         }
       } catch (error) {
-        console.error('Error uploading file:', error);
         setUploadError(error.message);
       } finally {
         setUploading(false);

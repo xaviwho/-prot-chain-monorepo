@@ -26,7 +26,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	var user models.User
 	err := h.db.QueryRow(`
 		SELECT id, email, first_name, last_name, created_at, updated_at
-		FROM users WHERE id = ?
+		FROM users WHERE id = $1
 	`, userID).Scan(&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -92,9 +92,9 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	// Update user profile
 	if passwordHash != nil {
 		_, err := h.db.Exec(`
-			UPDATE users 
-			SET first_name = ?, last_name = ?, email = ?, password_hash = ?, updated_at = ?
-			WHERE id = ?
+			UPDATE users
+			SET first_name = $1, last_name = $2, email = $3, password_hash = $4, updated_at = $5
+			WHERE id = $6
 		`, req.FirstName, req.LastName, req.Email, *passwordHash, time.Now(), userID)
 
 		if err != nil {
@@ -106,9 +106,9 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		}
 	} else {
 		_, err := h.db.Exec(`
-			UPDATE users 
-			SET first_name = ?, last_name = ?, email = ?, updated_at = ?
-			WHERE id = ?
+			UPDATE users
+			SET first_name = $1, last_name = $2, email = $3, updated_at = $4
+			WHERE id = $5
 		`, req.FirstName, req.LastName, req.Email, time.Now(), userID)
 
 		if err != nil {
@@ -133,7 +133,7 @@ func (h *UserHandler) GetStats(c *gin.Context) {
 
 	// Get total workflows
 	err := h.db.QueryRow(`
-		SELECT COUNT(*) FROM workflows WHERE user_id = ?
+		SELECT COUNT(*) FROM workflows WHERE user_id = $1
 	`, userID).Scan(&stats.TotalWorkflows)
 	if err != nil {
 		stats.TotalWorkflows = 0
@@ -141,7 +141,7 @@ func (h *UserHandler) GetStats(c *gin.Context) {
 
 	// Get completed workflows
 	err = h.db.QueryRow(`
-		SELECT COUNT(*) FROM workflows WHERE user_id = ? AND status = 'completed'
+		SELECT COUNT(*) FROM workflows WHERE user_id = $1 AND status = 'completed'
 	`, userID).Scan(&stats.CompletedWorkflows)
 	if err != nil {
 		stats.CompletedWorkflows = 0
@@ -149,7 +149,7 @@ func (h *UserHandler) GetStats(c *gin.Context) {
 
 	// Get organization count
 	err = h.db.QueryRow(`
-		SELECT COUNT(DISTINCT organization_id) FROM organization_members WHERE user_id = ?
+		SELECT COUNT(DISTINCT organization_id) FROM organization_members WHERE user_id = $1
 	`, userID).Scan(&stats.OrganizationCount)
 	if err != nil {
 		stats.OrganizationCount = 0
@@ -157,7 +157,7 @@ func (h *UserHandler) GetStats(c *gin.Context) {
 
 	// Get team count
 	err = h.db.QueryRow(`
-		SELECT COUNT(DISTINCT team_id) FROM team_members WHERE user_id = ?
+		SELECT COUNT(DISTINCT team_id) FROM team_members WHERE user_id = $1
 	`, userID).Scan(&stats.TeamCount)
 	if err != nil {
 		stats.TeamCount = 0

@@ -25,7 +25,6 @@ export default function WorkflowRegistration({ workflowId, onRegistrationComplet
     setSuccess(false);
     
     try {
-      console.log(`Registering workflow: ${workflowId}`);
       
       // Use the new direct workflow registration endpoint
       const response = await fetch(`/api/workflow/${workflowId}/register`, {
@@ -44,14 +43,12 @@ export default function WorkflowRegistration({ workflowId, onRegistrationComplet
         throw new Error(data.error || `Registration failed with status: ${response.status}`);
       }
       
-      console.log('Registration successful:', data);
       setSuccess(true);
       
       if (onRegistrationComplete) {
         onRegistrationComplete(data);
       }
     } catch (err) {
-      console.error('Error registering workflow:', err);
       setError(err.message);
     } finally {
       setRegistering(false);

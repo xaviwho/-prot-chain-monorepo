@@ -21,12 +21,10 @@ const RunVirtualScreeningButton = ({ workflowId, onSuccess, onError, disabled })
             }
 
             const data = await response.json();
-            console.log('Virtual Screening initiated successfully:', data);
             if (onSuccess) {
                 onSuccess(data); // Pass the updated results data back
             }
         } catch (err) {
-            console.error('Error running virtual screening:', err);
             setError(err.message);
             if (onError) {
                 onError(err.message);

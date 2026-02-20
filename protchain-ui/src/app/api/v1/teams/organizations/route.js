@@ -19,7 +19,6 @@ export async function GET(request) {
   try {
     // Temporarily bypass JWT validation for debugging (matching other endpoints)
     const authHeader = request.headers.get('authorization');
-    console.log('Organizations request - auth header present:', !!authHeader);
     
     // Continue without strict authentication for development
     
@@ -28,22 +27,17 @@ export async function GET(request) {
     const orgId = url.searchParams.get('id');
     
     if (orgId) {
-      console.log('Organization detail request for ID:', orgId);
-      console.log('Available organization IDs:', organizations.map(org => org.id));
       
       // Find organization by ID
       const organization = organizations.find(org => org.id === orgId);
-      console.log('Found organization:', !!organization);
       
       if (!organization) {
-        console.log('Organization not found for ID:', orgId);
         return NextResponse.json(
           { error: 'Organization not found' },
           { status: 404 }
         );
       }
       
-      console.log('Returning organization data for:', organization.name);
       return NextResponse.json({
         success: true,
         data: organization
@@ -57,7 +51,6 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error('Organizations list error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch organizations' },
       { status: 500 }
@@ -103,7 +96,6 @@ export async function POST(request) {
     // Add to organizations array
     organizations.push(newOrganization);
 
-    console.log(`Created organization: ${newOrganization.name}`);
 
     return NextResponse.json({
       success: true,
@@ -111,7 +103,6 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Organization creation error:', error);
     return NextResponse.json(
       { error: 'Failed to create organization' },
       { status: 500 }
@@ -156,7 +147,6 @@ export async function DELETE(request) {
     // Remove organization from array
     const deletedOrg = organizations.splice(orgIndex, 1)[0];
 
-    console.log(`Deleted organization: ${deletedOrg.name}`);
 
     return NextResponse.json({
       success: true,
@@ -165,7 +155,6 @@ export async function DELETE(request) {
     });
 
   } catch (error) {
-    console.error('Organization deletion error:', error);
     return NextResponse.json(
       { error: 'Failed to delete organization' },
       { status: 500 }

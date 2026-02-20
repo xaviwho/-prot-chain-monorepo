@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -34,16 +35,27 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 		return
 	}
 
+	page, perPage, offset := parsePagination(c)
+
+	// Get total count
+	var total int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM workflows WHERE user_id = $1`, userID).Scan(&total); err != nil {
+		log.Printf("failed to count workflows: %s", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to fetch workflows"})
+		return
+	}
+
 	rows, err := h.db.Query(`
-		SELECT id, user_id, name, description, status, results, blockchain_tx_hash, ipfs_hash, 
+		SELECT id, user_id, name, description, status, results, blockchain_tx_hash, ipfs_hash,
 		       blockchain_committed_at, created_at, updated_at, team_id
-		FROM workflows 
-		WHERE user_id = $1 
+		FROM workflows
+		WHERE user_id = $1
 		ORDER BY created_at DESC
-	`, userID)
+		LIMIT $2 OFFSET $3
+	`, userID, perPage, offset)
 
 	if err != nil {
-		fmt.Printf("failed to list workflow information: %s", err)
+		log.Printf("failed to list workflow information: %s", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to fetch workflows",
@@ -52,23 +64,17 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 	}
 	defer rows.Close()
 
-
-	// Initialize as non-nil to ensure JSON encodes [] instead of null when empty
 	workflows := make([]dto.WorkflowResponse, 0)
 	for rows.Next() {
-		fmt.Println("Handling row")
-		fmt.Println("row is: ", rows)
 		var w models.Workflow
 		err := rows.Scan(&w.ID, &w.UserID, &w.Name, &w.Description, &w.Status, &w.Results,
 			&w.BlockchainTxHash, &w.IPFSHash, &w.BlockchainCommittedAt,
 			&w.CreatedAt, &w.UpdatedAt, &w.TeamID)
 		if err != nil {
-			fmt.Printf("failed to scan workflow information: %s", err)
+			log.Printf("failed to scan workflow: %s", err)
 			continue
 		}
-		fmt.Printf("Workflow is: %v", w)
 
-		// Handle pointer fields safely
 		description := ""
 		if w.Description != nil {
 			description = *w.Description
@@ -91,11 +97,15 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 			UpdatedAt:             w.UpdatedAt,
 		})
 	}
-	fmt.Printf("Workflows are: %v", workflows)
-
-	c.JSON(http.StatusOK, dto.SuccessResponse{
+	c.JSON(http.StatusOK, dto.PaginatedResponse{
 		Success: true,
 		Data:    workflows,
+		Pagination: dto.PaginationMeta{
+			Page:       page,
+			PerPage:    perPage,
+			Total:      total,
+			TotalPages: totalPages(total, perPage),
+		},
 	})
 }
 
@@ -121,9 +131,9 @@ func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
 	var workflowID int
 		// Get user's default team_id
 	var teamID int
-	err := h.db.QueryRow(`SELECT team_id FROM team_members WHERE user_id = $1 AND role = 'owner'`, userID).Scan(&teamID)
+	err := h.db.QueryRow(`SELECT team_id FROM team_members WHERE user_id = $1 AND role = $2`, userID, models.RoleOwner).Scan(&teamID)
 	if err != nil && err != sql.ErrNoRows {
-		fmt.Printf("Error selecting team id : %v", err)
+		log.Printf("error selecting team id: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to find user team",
@@ -133,12 +143,12 @@ func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
 
 	err = h.db.QueryRow(`
 		INSERT INTO workflows (user_id, team_id, name, description, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'draft', $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
-	`, userID, teamID, req.Name, req.Description, time.Now(), time.Now()).Scan(&workflowID)
+	`, userID, teamID, req.Name, req.Description, models.StatusDraft, time.Now(), time.Now()).Scan(&workflowID)
 
 	if err != nil {
-		fmt.Printf("Error creating workflow : %v", err)
+		log.Printf("error creating workflow: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to create workflow",
@@ -153,7 +163,7 @@ func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
 			ID:          workflowID,
 			Name:        req.Name,
 			Description: req.Description,
-			Status:      "draft",
+			Status:      models.StatusDraft,
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},
@@ -162,6 +172,9 @@ func (h *WorkflowHandler) CreateWorkflow(c *gin.Context) {
 
 func (h *WorkflowHandler) GetWorkflow(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	if _, ok := parseIDParam(c, "id"); !ok {
+		return
+	}
 	workflowID := c.Param("id")
 
 	var w models.Workflow
@@ -239,6 +252,9 @@ func (h *WorkflowHandler) GetWorkflow(c *gin.Context) {
 
 func (h *WorkflowHandler) UpdateWorkflow(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	if _, ok := parseIDParam(c, "id"); !ok {
+		return
+	}
 	workflowID := c.Param("id")
 
 	var req dto.UpdateWorkflowRequest
@@ -306,6 +322,9 @@ func (h *WorkflowHandler) UpdateWorkflowBlockchainInfo(c *gin.Context) {
 
 func (h *WorkflowHandler) DeleteWorkflow(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	if _, ok := parseIDParam(c, "id"); !ok {
+		return
+	}
 	workflowID := c.Param("id")
 
 	tx, err := h.db.Begin()
@@ -333,7 +352,10 @@ func (h *WorkflowHandler) DeleteWorkflow(c *gin.Context) {
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, raErr := result.RowsAffected()
+	if raErr != nil {
+		log.Printf("DeleteWorkflow: RowsAffected error: %v", raErr)
+	}
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{Success: false, Error: "Workflow not found"})
 		return
@@ -533,9 +555,9 @@ func (h *WorkflowHandler) RegisterWorkflow(c *gin.Context) {
 	// Update workflow status to registered
 	_, err := h.db.Exec(`
 		UPDATE workflows 
-		SET status = 'registered', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1 AND user_id = $2
-	`, workflowID, userID)
+		SET status = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2 AND user_id = $3
+	`, models.StatusRegistered, workflowID, userID)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
@@ -549,7 +571,7 @@ func (h *WorkflowHandler) RegisterWorkflow(c *gin.Context) {
 		"success": true,
 		"message": "Workflow registered successfully",
 		"workflow_id": workflowID,
-		"status": "registered",
+		"status": models.StatusRegistered,
 	})
 }
 
@@ -657,9 +679,6 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 		bioapiURL = "http://localhost:8000"
 	}
 
-	fmt.Printf("ProcessStructure: Using BioAPI URL: %s\n", bioapiURL)
-	fmt.Printf("ProcessStructure: Processing PDB ID: %s\n", pdbId)
-
 	// Prepare request for BioAPI - match the StructureRequest schema
 	bioapiReq := map[string]interface{}{
 		"pdb_id": pdbId,
@@ -668,7 +687,7 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 
 	reqBody, err := json.Marshal(bioapiReq)
 	if err != nil {
-		fmt.Printf("ProcessStructure: Failed to marshal request: %v\n", err)
+		log.Printf("failed to marshal BioAPI request: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to prepare structure processing request",
@@ -676,20 +695,8 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 		return
 	}
 
-	fmt.Printf("ProcessStructure: Request body: %s\n", string(reqBody))
-
-	// First check if BioAPI service is running
-	healthResp, err := http.Get(bioapiURL + "/health")
-	if err != nil {
-		fmt.Printf("ProcessStructure: BioAPI health check failed: %v\n", err)
-	} else {
-		healthResp.Body.Close()
-		fmt.Printf("ProcessStructure: BioAPI health check status: %d\n", healthResp.StatusCode)
-	}
-
-	// Make request to BioAPI - use the correct endpoint from OpenAPI spec
+	// Make request to BioAPI
 	endpoint := fmt.Sprintf("%s/api/v1/workflows/%s/structure", bioapiURL, workflowID)
-	fmt.Printf("ProcessStructure: Calling endpoint: %s\n", endpoint)
 	
 	resp, err := http.Post(
 		endpoint,
@@ -697,7 +704,7 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 		strings.NewReader(string(reqBody)),
 	)
 	if err != nil {
-		fmt.Printf("ProcessStructure: HTTP request failed: %v\n", err)
+		log.Printf("BioAPI request failed: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to connect to structure processing service: " + err.Error(),
@@ -706,12 +713,10 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("ProcessStructure: BioAPI response status: %d\n", resp.StatusCode)
-
 	// Read BioAPI response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Printf("ProcessStructure: Failed to read response body: %v\n", err)
+		log.Printf("failed to read BioAPI response: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to read structure processing response",
@@ -719,10 +724,8 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 		return
 	}
 
-	fmt.Printf("ProcessStructure: Response body: %s\n", string(body))
-
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("ProcessStructure: BioAPI error - Status: %d, Body: %s\n", resp.StatusCode, string(body))
+		log.Printf("BioAPI error - status: %d", resp.StatusCode)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   fmt.Sprintf("Structure processing service error (Status %d): %s", resp.StatusCode, string(body)),
@@ -733,7 +736,7 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 	// Parse BioAPI response
 	var bioapiResponse map[string]interface{}
 	if err := json.Unmarshal(body, &bioapiResponse); err != nil {
-		fmt.Printf("ProcessStructure: Failed to parse response: %v\n", err)
+		log.Printf("failed to parse BioAPI response: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to parse structure processing response: " + err.Error(),
@@ -744,7 +747,7 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 	// Update workflow with results
 	resultsJSON, err := json.Marshal(bioapiResponse)
 	if err != nil {
-		fmt.Printf("ProcessStructure: Failed to serialize results: %v\n", err)
+		log.Printf("failed to serialize results: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to serialize results",
@@ -752,24 +755,20 @@ func (h *WorkflowHandler) ProcessStructure(c *gin.Context) {
 		return
 	}
 
-	fmt.Printf("ProcessStructure: Updating workflow %s with results\n", workflowID)
-
 	_, err = h.db.Exec(`
 		UPDATE workflows 
-		SET results = $1, status = 'structure_processed', updated_at = NOW()
-		WHERE id = $2 AND user_id = $3
-	`, string(resultsJSON), workflowID, userID)
+		SET results = $1, status = $2, updated_at = NOW()
+		WHERE id = $3 AND user_id = $4
+	`, string(resultsJSON), models.StatusStructureProcessed, workflowID, userID)
 
 	if err != nil {
-		fmt.Printf("ProcessStructure: Database update failed: %v\n", err)
+		log.Printf("failed to update workflow with results: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
 			Error:   "Failed to update workflow with results: " + err.Error(),
 		})
 		return
 	}
-
-	fmt.Printf("ProcessStructure: Successfully processed structure for PDB ID: %s\n", pdbId)
 
 	// Return success response with results
 	c.JSON(http.StatusOK, dto.SuccessResponse{

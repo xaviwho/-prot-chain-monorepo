@@ -51,7 +51,6 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Password change error:', error);
     return NextResponse.json({ 
       error: 'Failed to change password' 
     }, { status: 500 });

@@ -30,7 +30,6 @@ export default function ProteinViewer({ workflowId, pdbData = null }) {
     setTimeout(() => {
       if (stage) {
         stage.handleResize();
-        console.log('ProteinViewer: Initial resize completed');
       }
     }, 100);
 
@@ -56,11 +55,9 @@ export default function ProteinViewer({ workflowId, pdbData = null }) {
 
   const loadProteinStructure = async () => {
     if (!stageRef.current) {
-      console.log('ProteinViewer: Stage not initialized yet');
       return;
     }
     
-    console.log('ProteinViewer: Starting to load structure for workflowId:', workflowId);
     setLoading(true);
     setError(null);
     
@@ -68,20 +65,15 @@ export default function ProteinViewer({ workflowId, pdbData = null }) {
       let structureData;
       
       if (pdbData) {
-        console.log('ProteinViewer: Using provided PDB data');
         structureData = pdbData;
       } else if (workflowId) {
         // Fetch PDB file from workflow uploads
         const pdbUrl = `/api/uploads/${workflowId}/input.pdb`;
-        console.log('ProteinViewer: Fetching PDB from:', pdbUrl);
         const response = await fetch(pdbUrl);
-        console.log('ProteinViewer: Fetch response status:', response.status);
         if (!response.ok) {
           throw new Error(`Failed to load protein structure file: ${response.status} ${response.statusText}`);
         }
         structureData = await response.text();
-        console.log('ProteinViewer: PDB data length:', structureData.length);
-        console.log('ProteinViewer: PDB data preview:', structureData.substring(0, 200));
       } else {
         throw new Error('No protein structure data available');
       }
@@ -90,25 +82,21 @@ export default function ProteinViewer({ workflowId, pdbData = null }) {
         throw new Error('Empty protein structure data received');
       }
 
-      console.log('ProteinViewer: Loading structure into NGL...');
       // Load structure into NGL
       const component = await stageRef.current.loadFile(
         new Blob([structureData], { type: 'text/plain' }),
         { ext: 'pdb', name: `Workflow ${workflowId}` }
       );
       
-      console.log('ProteinViewer: Structure loaded successfully, component:', component);
       componentRef.current = component;
       
       // Add default representation
-      console.log('ProteinViewer: Adding representation:', representation, 'with color scheme:', colorScheme);
       component.addRepresentation(representation, {
         colorScheme: colorScheme,
         opacity: opacity
       });
       
       // Center and zoom to fit
-      console.log('ProteinViewer: Centering view...');
       stageRef.current.autoView();
       
       // Force resize after structure is loaded and centered
@@ -116,14 +104,11 @@ export default function ProteinViewer({ workflowId, pdbData = null }) {
         if (stageRef.current) {
           stageRef.current.handleResize();
           stageRef.current.autoView();
-          console.log('ProteinViewer: Post-load resize and autoView completed');
         }
       }, 200);
       
-      console.log('ProteinViewer: Structure loading completed successfully');
       setLoading(false);
     } catch (err) {
-      console.error('ProteinViewer: Error loading protein structure:', err);
       setError(err.message);
       setLoading(false);
     }

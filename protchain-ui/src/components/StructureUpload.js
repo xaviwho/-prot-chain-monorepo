@@ -63,22 +63,18 @@ export default function StructureUpload({ onUploadComplete, workflowId }) {
       }
 
       const data = await response.json();
-      console.log('Structure processing completed with data:', data);
       
       // The API returns results immediately, no polling needed
       // Check for real bioapi response format: {details: {descriptors: {...}}}
       if (data && data.details && data.details.descriptors) {
-        console.log('✅ Structure analysis successful, calling onUploadComplete with:', data);
         onUploadComplete({
           status: 'success',
           ...data
         });
       } else {
-        console.error('❌ Unexpected API response format:', data);
         throw new Error('No structure analysis results received. Expected format: {details: {descriptors: {...}}}');
       }
     } catch (err) {
-      console.error('Structure processing error:', err);
       setError(err.message);
     } finally {
       setUploading(false);
@@ -95,7 +91,6 @@ export default function StructureUpload({ onUploadComplete, workflowId }) {
     setError(null);
 
     try {
-      console.log('Searching for PDB ID:', pdbId);
       const response = await retrieveProteinDetail(pdbId);
 
       if (!response || !response.metadata || !response.file) {
@@ -126,12 +121,10 @@ export default function StructureUpload({ onUploadComplete, workflowId }) {
       }
 
       const data = await uploadResponse.json();
-      console.log('Structure processing completed with data:', data);
       
       // The API returns results immediately, no polling needed
       // Check for real bioapi response format: {details: {descriptors: {...}}}
       if (data && data.details && data.details.descriptors) {
-        console.log('✅ PDB structure analysis successful, calling onUploadComplete with:', data);
         onUploadComplete({
           status: 'success',
           ...data,
@@ -139,11 +132,9 @@ export default function StructureUpload({ onUploadComplete, workflowId }) {
           metadata: response.metadata.payload
         });
       } else {
-        console.error('❌ Unexpected PDB API response format:', data);
         throw new Error('No structure analysis results received. Expected format: {details: {descriptors: {...}}}');
       }
     } catch (err) {
-      console.error('PDB search error:', err);
       setError(err.message);
     } finally {
       setUploading(false);

@@ -17,7 +17,6 @@ export default function RunBindingSiteButton({ workflowId, onSuccess, variant = 
       setError(null);
       
       // Call the direct binding site analysis endpoint
-      console.log(`Running binding site analysis for workflow ${workflowId}...`);
       const response = await fetch(`/api/workflow/${workflowId}/direct-binding-site-analysis`, {
         method: 'POST',
       });
@@ -27,7 +26,6 @@ export default function RunBindingSiteButton({ workflowId, onSuccess, variant = 
       }
       
       const data = await response.json();
-      console.log('Binding site analysis completed successfully:', data);
       
       // Show success message
       setShowSuccess(true);
@@ -40,7 +38,6 @@ export default function RunBindingSiteButton({ workflowId, onSuccess, variant = 
         const refreshRes = await fetch(`/api/workflow/${workflowId}/refresh-results`);
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json();
-          console.log('Refreshed results:', refreshData);
           
           // Make sure we have binding site data in the correct format
           if (!refreshData.binding_site_analysis && data.binding_sites) {
@@ -60,13 +57,11 @@ export default function RunBindingSiteButton({ workflowId, onSuccess, variant = 
           setTimeout(() => {
             const bindingSiteContent = document.querySelector('[role="tabpanel"][aria-labelledby="binding-sites-tab"]');
             if (bindingSiteContent && bindingSiteContent.textContent.includes('No binding site data available')) {
-              console.log('Binding site data not showing in UI, forcing page reload...');
               window.location.reload();
             }
           }, 2000);
         }
       } catch (refreshError) {
-        console.error('Error refreshing results:', refreshError);
       }
       
       // Force navigation to the binding sites tab
@@ -76,7 +71,6 @@ export default function RunBindingSiteButton({ workflowId, onSuccess, variant = 
       }
       
     } catch (error) {
-      console.error('Error running binding site analysis:', error);
       setError(error.message);
     } finally {
       setLoading(false);

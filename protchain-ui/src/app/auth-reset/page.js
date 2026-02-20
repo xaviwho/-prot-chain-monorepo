@@ -46,7 +46,6 @@ export default function AuthReset() {
 
       setIsCleared(true);
     } catch (error) {
-      console.error('Error clearing auth data:', error);
     }
   };
 

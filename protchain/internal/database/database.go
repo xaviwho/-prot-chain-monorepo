@@ -4,23 +4,29 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	_ "github.com/lib/pq"
 )
 
-func Initialize(databaseURL string) (*sql.DB, error) {
-	fmt.Printf("Initializing database with URL: %s", databaseURL)
+func Initialize(databaseURL string, maxOpen, maxIdle, connMaxLifetimeSec int) (*sql.DB, error) {
+	log.Println("Initializing database connection")
 	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Configure connection pool
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(time.Duration(connMaxLifetimeSec) * time.Second)
 
 	// Test connection
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Printf("Database connected successfully: %s", databaseURL)
+	log.Printf("Database connected (pool: maxOpen=%d, maxIdle=%d, maxLifetime=%ds)", maxOpen, maxIdle, connMaxLifetimeSec)
 	return db, nil
 }
 

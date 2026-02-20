@@ -8,7 +8,6 @@ export async function GET(request, { params }) {
   try {
     // First try the direct API approach
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
-    console.log('Fetching workflow results from:', `${apiUrl}/api/v1/workflows/${id}/results`);
     
     const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/results`);
     
@@ -22,18 +21,15 @@ export async function GET(request, { params }) {
     }
     
     // If the API didn't return the structure data, try to read the results.json file directly
-    console.log('Attempting to read results.json directly for workflow:', id);
     
     // Path to the structures directory
     const structuresDir = path.join(process.cwd(), '..', 'uploads', 'structures', id);
     const resultsFile = path.join(structuresDir, 'results.json');
     
-    console.log('Looking for results file at:', resultsFile);
     
     if (fs.existsSync(resultsFile)) {
       const fileContent = fs.readFileSync(resultsFile, 'utf8');
       const structureData = JSON.parse(fileContent);
-      console.log('Found structure data:', structureData);
       return NextResponse.json(structureData);
     }
     
@@ -42,7 +38,6 @@ export async function GET(request, { params }) {
       { status: 404 }
     );
   } catch (error) {
-    console.error('Error fetching structure results:', error);
     return NextResponse.json(
       { error: 'Failed to fetch structure results' },
       { status: error.response?.status || 500 }

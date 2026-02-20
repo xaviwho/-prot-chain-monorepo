@@ -28,8 +28,6 @@ export async function POST(request, { params }) {
     const pdbPath = getWorkflowFilePath(id, 'processed.pdb');
     const resultsPath = getWorkflowFilePath(id, 'results.json');
     
-    console.log(`Running guaranteed binding site detection for workflow: ${id}`);
-    console.log(`Using PDB file: ${normalizePath(pdbPath)}`);
     
     // Check if the files exist
     if (!fs.existsSync(pdbPath)) {
@@ -41,7 +39,6 @@ export async function POST(request, { params }) {
     
     // Read the PDB file
     const pdbContent = fs.readFileSync(pdbPath, 'utf8');
-    console.log(`Read PDB file with ${pdbContent.length} bytes`);
     
     // Parse the PDB file to extract atom coordinates
     const atoms = [];
@@ -77,27 +74,22 @@ export async function POST(request, { params }) {
       }
     });
     
-    console.log(`Parsed ${atoms.length} protein atoms and ${ligandAtoms.length} ligand atoms`);
     
     // Generate binding sites using a hybrid approach
     let bindingSites = [];
     
     // If we have ligands, use them to identify binding sites
     if (ligandAtoms.length > 0) {
-      console.log('Using ligand-based binding site detection');
       bindingSites = generateLigandBasedBindingSites(atoms, ligandAtoms);
     } else {
-      console.log('No ligands found, using geometry-based binding site detection');
       bindingSites = generateGeometryBasedBindingSites(atoms);
     }
     
     // If we still don't have binding sites, generate artificial ones
     if (bindingSites.length === 0) {
-      console.log('No binding sites detected, generating artificial binding sites');
       bindingSites = generateArtificialBindingSites(atoms);
     }
     
-    console.log(`Generated ${bindingSites.length} binding sites`);
     
     // Update the results file with binding site information
     let resultsData = {};
@@ -106,7 +98,6 @@ export async function POST(request, { params }) {
         const resultsContent = fs.readFileSync(resultsPath, 'utf8');
         resultsData = JSON.parse(resultsContent);
       } catch (error) {
-        console.error('Error reading results file:', error);
       }
     }
     
@@ -119,7 +110,6 @@ export async function POST(request, { params }) {
     resultsData.binding_site_analysis.timestamp = new Date().toISOString();
     
     fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
-    console.log(`Updated results file with binding site information`);
     
     // Return the binding sites
     return NextResponse.json({
@@ -129,7 +119,6 @@ export async function POST(request, { params }) {
     });
     
   } catch (error) {
-    console.error('Error in guaranteed binding site detection:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to run guaranteed binding site detection' },
       { status: 500 }
@@ -242,11 +231,9 @@ function generateGeometryBasedBindingSites(atoms) {
     }
   });
   
-  console.log(`Identified ${surfaceResidues.length} potential surface residues`);
   
   // Cluster surface residues to find potential binding sites
   const clusters = clusterResidues(surfaceResidues, 15.0);
-  console.log(`Found ${clusters.length} potential binding site clusters`);
   
   // Convert clusters to binding sites
   const bindingSites = [];

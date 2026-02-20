@@ -1,21 +1,29 @@
+import logging
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import os
-import json
 import tempfile
 from typing import Optional, Dict, Any
 
 from structure_analysis import StructurePreparation
 from binding_analysis import RealBindingSiteDetection
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="ProtChain BioAPI", version="1.0.0")
 
-# Configure CORS
+# Configure CORS from environment variable
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8082").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,15 +60,13 @@ async def health_check():
 async def process_structure(workflow_id: str, request: StructureRequest):
     """Process protein structure for workflow"""
     try:
-        print(f"Processing structure for workflow {workflow_id} with PDB ID: {request.pdb_id}")
-        
-        # Prepare structure using real analysis
+        logger.info(f"Processing structure for workflow {workflow_id} with PDB ID: {request.pdb_id}")
+
         results = structure_prep.prepare_structure(request.pdb_id, request.structure_data)
-        
+
         if not results:
             raise HTTPException(status_code=400, detail="Failed to process structure")
-        
-        # Format response for frontend compatibility
+
         response_data = {
             "workflow_id": workflow_id,
             "pdb_id": request.pdb_id,
@@ -70,111 +76,82 @@ async def process_structure(workflow_id: str, request: StructureRequest):
             "status": "completed",
             "method": "real_protein_analysis"
         }
-        
-        print(f"Structure processing completed successfully for {request.pdb_id}")
+
+        logger.info(f"Structure processing completed for {request.pdb_id}")
         return AnalysisResponse(success=True, data=response_data)
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Structure processing error: {str(e)}")
+        logger.error(f"Structure processing error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Structure processing failed: {str(e)}")
 
 @app.post("/api/v1/structure/workflows/{workflow_id}/structure")
 async def process_structure_direct(workflow_id: str, request: StructureRequest):
     """Direct structure processing without workflow dependency"""
-    try:
-        print(f"Direct structure processing for workflow {workflow_id} with PDB ID: {request.pdb_id}")
-        
-        # Prepare structure using real analysis
-        results = structure_prep.prepare_structure(request.pdb_id, request.structure_data)
-        
-        if not results:
-            raise HTTPException(status_code=400, detail="Failed to process structure")
-        
-        # Format response for frontend compatibility
-        response_data = {
-            "workflow_id": workflow_id,
-            "pdb_id": request.pdb_id,
-            "details": {
-                "descriptors": results
-            },
-            "status": "completed",
-            "method": "real_protein_analysis"
-        }
-        
-        print(f"Direct structure processing completed successfully for {request.pdb_id}")
-        return AnalysisResponse(success=True, data=response_data)
-        
-    except Exception as e:
-        print(f"Direct structure processing error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Structure processing failed: {str(e)}")
+    return await process_structure(workflow_id, request)
 
 # Binding site analysis endpoints
 @app.post("/api/v1/binding/direct-binding-analysis")
 async def analyze_binding_sites(request: BindingAnalysisRequest):
     """Analyze binding sites using real geometric detection"""
     try:
-        print(f"Analyzing binding sites for PDB ID: {request.pdb_id}")
-        
-        # Perform real binding site detection
+        logger.info(f"Analyzing binding sites for PDB ID: {request.pdb_id}")
+
         results = binding_detector.detect_binding_sites(request.pdb_id, request.structure_data)
-        
+
         if not results:
             raise HTTPException(status_code=400, detail="Failed to analyze binding sites")
-        
-        # Format response
+
         response_data = {
             "pdb_id": request.pdb_id,
             "binding_sites": results,
             "method": "real_geometric_cavity_detection",
             "status": "completed"
         }
-        
-        print(f"Binding site analysis completed for {request.pdb_id}: {len(results)} sites found")
+
+        logger.info(f"Binding site analysis completed for {request.pdb_id}: {len(results)} sites found")
         return AnalysisResponse(success=True, data=response_data)
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Binding site analysis error: {str(e)}")
+        logger.error(f"Binding site analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Binding site analysis failed: {str(e)}")
 
 @app.post("/api/v1/structure/binding-sites/detect")
 async def detect_binding_sites(request: BindingAnalysisRequest):
-    """Direct binding site detection endpoint for Molstar viewer"""
+    """Direct binding site detection endpoint"""
     try:
-        print(f"Real binding site detection for PDB ID: {request.pdb_id}")
-        
-        # Perform real geometric cavity detection
+        logger.info(f"Binding site detection for PDB ID: {request.pdb_id}")
+
         results = binding_detector.detect_binding_sites(request.pdb_id, request.structure_data)
-        
+
         if not results:
-            print(f"No binding sites detected for {request.pdb_id}")
             return {"binding_sites": [], "pdb_id": request.pdb_id, "method": "geometric_cavity_detection"}
-        
-        print(f"✅ Real binding site detection completed for {request.pdb_id}: {len(results)} sites found")
-        
+
         return {
             "binding_sites": results,
             "pdb_id": request.pdb_id,
             "method": "geometric_cavity_detection",
             "total_sites": len(results)
         }
-        
+
     except Exception as e:
-        print(f"Real binding site detection error: {str(e)}")
+        logger.error(f"Binding site detection error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Binding site detection failed: {str(e)}")
 
 @app.post("/api/v1/workflows/{workflow_id}/binding-sites")
 async def analyze_workflow_binding_sites(workflow_id: str, request: BindingAnalysisRequest):
     """Analyze binding sites for workflow"""
     try:
-        print(f"Analyzing binding sites for workflow {workflow_id} with PDB ID: {request.pdb_id}")
-        
-        # Perform real binding site detection
+        logger.info(f"Analyzing binding sites for workflow {workflow_id} with PDB ID: {request.pdb_id}")
+
         results = binding_detector.detect_binding_sites(request.pdb_id, request.structure_data)
-        
+
         if not results:
             raise HTTPException(status_code=400, detail="Failed to analyze binding sites")
-        
-        # Format response
+
         response_data = {
             "workflow_id": workflow_id,
             "pdb_id": request.pdb_id,
@@ -182,12 +159,14 @@ async def analyze_workflow_binding_sites(workflow_id: str, request: BindingAnaly
             "method": "real_geometric_cavity_detection",
             "status": "completed"
         }
-        
-        print(f"Workflow binding site analysis completed for {request.pdb_id}: {len(results)} sites found")
+
+        logger.info(f"Workflow binding site analysis completed for {request.pdb_id}: {len(results)} sites found")
         return AnalysisResponse(success=True, data=response_data)
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Workflow binding site analysis error: {str(e)}")
+        logger.error(f"Workflow binding site analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Binding site analysis failed: {str(e)}")
 
 # File upload endpoint
@@ -195,21 +174,18 @@ async def analyze_workflow_binding_sites(workflow_id: str, request: BindingAnaly
 async def upload_structure(file: UploadFile = File(...)):
     """Upload and analyze structure file"""
     try:
-        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdb") as temp_file:
             content = await file.read()
             temp_file.write(content)
             temp_file_path = temp_file.name
-        
-        # Analyze uploaded structure
+
         results = structure_prep.prepare_structure_from_file(temp_file_path)
-        
-        # Clean up temp file
+
         os.unlink(temp_file_path)
-        
+
         if not results:
             raise HTTPException(status_code=400, detail="Failed to process uploaded structure")
-        
+
         response_data = {
             "filename": file.filename,
             "details": {
@@ -218,11 +194,13 @@ async def upload_structure(file: UploadFile = File(...)):
             "status": "completed",
             "method": "real_protein_analysis"
         }
-        
+
         return AnalysisResponse(success=True, data=response_data)
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"File upload error: {str(e)}")
+        logger.error(f"File upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
 
 if __name__ == "__main__":

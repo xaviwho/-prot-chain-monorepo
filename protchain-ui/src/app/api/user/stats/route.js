@@ -78,11 +78,9 @@ export async function GET(request) {
           stats.collaborations = orgData.length || 0;
         }
       } catch (err) {
-        console.log('Organizations endpoint not available:', err.message);
       }
       
     } catch (err) {
-      console.error('Error fetching real stats:', err);
       // Fallback to basic stats if backend is unavailable
       stats.workflows = 1;
       stats.analyses = 3;
@@ -131,7 +129,6 @@ export async function GET(request) {
         ];
       }
     } catch (err) {
-      console.error('Error generating recent activity:', err);
       recentActivity = [
         { 
           action: 'Updated profile information', 
@@ -151,7 +148,6 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error('Stats fetch error:', error);
     return NextResponse.json({ 
       error: 'Failed to fetch statistics' 
     }, { status: 500 });

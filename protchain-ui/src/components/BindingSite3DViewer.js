@@ -42,7 +42,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
         
         return window.NGL;
       } catch (error) {
-        console.error('Failed to load NGL:', error);
         setError('Failed to load 3D viewer library');
         return null;
       }
@@ -50,7 +49,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
 
     loadNGL().then((NGL) => {
       if (NGL) {
-        console.log('NGL loaded successfully');
       }
     });
   }, []);
@@ -69,7 +67,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
         if (pickingProxy && pickingProxy.atom) {
           const atom = pickingProxy.atom;
           const residue = atom.residue;
-          console.log(`Hovering over ${residue.resname}${residue.resno}:${atom.chainname}`);
         }
       });
 
@@ -80,7 +77,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
       loadProteinStructure(stage);
       
     } catch (error) {
-      console.error('Error initializing NGL viewer:', error);
       setError('Failed to initialize 3D viewer');
     }
     
@@ -131,7 +127,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
       
       setLoading(false);
     } catch (error) {
-      console.error('Error loading protein structure:', error);
       setError('Failed to load protein structure');
       setLoading(false);
     }
@@ -155,7 +150,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
       });
       
       // Handle different binding site data formats
-      console.log('Selected binding site data:', selectedSite);
       
       let residueSelection = '';
       
@@ -175,7 +169,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
         }
       }
       
-      console.log('Generated residue selection:', residueSelection);
       
       // Add binding site representation if we have residues
       if (residueSelection) {
@@ -186,9 +179,7 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
             opacity: opacity,
             name: 'binding-site'
           });
-          console.log('Added binding site representation');
         } catch (error) {
-          console.error('Error adding binding site representation:', error);
         }
       }
       
@@ -204,9 +195,7 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
           
           const shapeComp = viewer.addComponentFromObject(shape);
           shapeComp.addRepresentation('buffer');
-          console.log('Added binding site center sphere');
         } catch (error) {
-          console.error('Error adding binding site center:', error);
         }
       }
       
@@ -215,7 +204,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
         try {
           viewer.autoView(residueSelection);
         } catch (error) {
-          console.error('Error focusing on binding site:', error);
           // Fallback: just auto view the entire structure
           viewer.autoView();
         }
@@ -225,7 +213,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
       }
       
     } catch (error) {
-      console.error('Error visualizing binding site:', error);
     }
   }, [selectedSite, viewer, bindingSiteStyle, opacity, theme]);
 
@@ -265,7 +252,6 @@ export default function BindingSite3DViewer({ workflowId, bindingSites = [] }) {
         }
       }
     } catch (error) {
-      console.error('Error updating protein representation:', error);
     }
   }, [displayStyle]);
 

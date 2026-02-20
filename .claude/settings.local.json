@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(where:*)",
+      "Bash(winget install:*)",
+      "Bash(\"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\" build ./...)",
+      "Bash(wc:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(xargs:*)",
+      "Bash(docker info:*)",
+      "Bash(bash start-docker.sh:*)",
+      "Bash(curl:*)",
+      "Bash(npm install:*)",
+      "Bash(git reset:*)"
+    ]
+  }
+}

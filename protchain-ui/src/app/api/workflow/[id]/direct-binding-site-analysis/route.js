@@ -10,12 +10,10 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Workflow ID is required' }, { status: 400 });
     }
 
-    console.log('Processing REAL binding site analysis for workflow:', id);
     
     // Get the uploads directory path (in root directory, not protchain-ui)
     const rootDir = path.resolve(process.cwd(), '..');
     const uploadsDir = path.join(rootDir, 'uploads', id);
-    console.log('DEBUG: uploadsDir:', uploadsDir);
     
     // Check if PDB file exists, if not try to fetch it from the workflow data
     const pdbPath = path.join(uploadsDir, 'input.pdb');
@@ -23,11 +21,8 @@ export async function POST(request, { params }) {
     let pdbId = null;
     
     if (!fs.existsSync(pdbPath)) {
-      console.error(`PDB file not found at: ${pdbPath}`);
-      console.error(`Uploads directory exists: ${fs.existsSync(uploadsDir)}`);
       if (fs.existsSync(uploadsDir)) {
         const files = fs.readdirSync(uploadsDir);
-        console.error(`Files in uploads directory: ${files.join(', ')}`);
       }
       
       // Try to get PDB content from blockchain.json or fetch from PDB database
@@ -35,7 +30,6 @@ export async function POST(request, { params }) {
       if (fs.existsSync(blockchainPath)) {
         try {
           const blockchainData = JSON.parse(fs.readFileSync(blockchainPath, 'utf8'));
-          console.log('Blockchain data:', JSON.stringify(blockchainData, null, 2));
           
           // Try multiple possible locations for PDB ID
           pdbId = blockchainData.pdbId || 
@@ -48,10 +42,8 @@ export async function POST(request, { params }) {
                        blockchainData.verification_data?.ipfs?.content?.results?.data?.pdb_id ||
                        blockchainData.verification_data?.ipfs?.content?.results?.data?.details?.descriptors?.pdb_id;
           
-          console.log('Extracted PDB ID:', pdbId);
           
           if (pdbId) {
-            console.log(`Attempting to fetch PDB ${pdbId} from RCSB PDB database...`);
             
             // Fetch PDB from RCSB PDB database
             const pdbResponse = await fetch(`https://files.rcsb.org/download/${pdbId}.pdb`);
@@ -60,16 +52,12 @@ export async function POST(request, { params }) {
               
               // Save the PDB file for future use
               fs.writeFileSync(pdbPath, pdbContent);
-              console.log(`Successfully fetched and saved PDB ${pdbId} to ${pdbPath}`);
             } else {
-              console.error(`Failed to fetch PDB ${pdbId} from RCSB: ${pdbResponse.statusText}`);
               throw new Error(`Failed to fetch PDB ${pdbId} from RCSB: ${pdbResponse.statusText}`);
             }
           } else {
-            console.error('No PDB ID found in blockchain data');
           }
         } catch (error) {
-          console.error('Error processing blockchain.json or fetching PDB:', error);
         }
       }
       
@@ -91,7 +79,6 @@ export async function POST(request, { params }) {
     }
     
     // Call REAL bioapi binding site analysis
-    console.log('Calling REAL bioapi binding site analysis...');
     let bioApiResponse;
     let bioApiResult;
     
@@ -109,25 +96,20 @@ export async function POST(request, { params }) {
       });
       
       if (!bioApiResponse.ok) {
-        console.error(`BioAPI request failed: ${bioApiResponse.status} ${bioApiResponse.statusText}`);
         const errorText = await bioApiResponse.text();
-        console.error('BioAPI error response:', errorText);
         
         throw new Error(`BioAPI service error: ${bioApiResponse.status} ${bioApiResponse.statusText}. Please ensure the BioAPI service is running on port 8000.`);
       }
       
       bioApiResult = await bioApiResponse.json();
     } catch (fetchError) {
-      console.error('Failed to connect to BioAPI:', fetchError);
       throw new Error(`Cannot connect to BioAPI service: ${fetchError.message}. Please ensure the BioAPI service is running on port 8000.`);
     }
     
-    console.log('REAL bioapi binding site analysis result:', bioApiResult);
     
     // The bioapi returns results directly in the response, not in a file
     // Check if bioapi result already contains binding sites
     if (bioApiResult && bioApiResult.data && bioApiResult.data.binding_sites) {
-      console.log('Found REAL binding site results in bioapi response:', bioApiResult);
       return NextResponse.json({
         status: 'success',
         message: 'REAL binding site analysis completed successfully',
@@ -140,7 +122,6 @@ export async function POST(request, { params }) {
     }
     
     // Implement polling for long-running analysis (large proteins take time)
-    console.log('Bioapi started analysis, polling for results...');
     const resultsPath = path.join(uploadsDir, 'results.json');
     let bindingSiteResults = null;
     let attempts = 0;
@@ -148,7 +129,6 @@ export async function POST(request, { params }) {
     
     while (attempts < maxAttempts && !bindingSiteResults) {
       attempts++;
-      console.log(`Polling attempt ${attempts}/${maxAttempts} for binding site results...`);
       
       // Wait 6 seconds between polls
       await new Promise(resolve => setTimeout(resolve, 6000));
@@ -159,11 +139,9 @@ export async function POST(request, { params }) {
           const resultsData = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
           if (resultsData.binding_site_analysis && resultsData.binding_site_analysis.binding_sites) {
             bindingSiteResults = resultsData.binding_site_analysis;
-            console.log('Found REAL binding site results in file:', bindingSiteResults);
             break;
           }
         } catch (error) {
-          console.error('Error reading binding site results:', error);
         }
       }
     }
@@ -190,7 +168,6 @@ export async function POST(request, { params }) {
     }
     
   } catch (error) {
-    console.error('Error in binding site analysis:', error);
     return NextResponse.json({ 
       error: 'Internal server error during binding site analysis',
       details: error.message 

@@ -1,5 +1,4 @@
 import axios from 'axios';
-import cuid from 'cuid';
 import Cookies from 'js-cookie';
 import { getValidToken, isValidJWT, clearAllTokens } from './tokenUtils';
 
@@ -13,7 +12,7 @@ export const apiClient = axios.create({
     headers: {
         'Content-Type': 'application/json',
         'X-Request-Source': 'protchain-client',
-        'X-Request-ID': cuid()
+        'X-Request-ID': typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)
     },
     withCredentials: false
 });
@@ -32,7 +31,6 @@ apiClient.interceptors.request.use((config) => {
     } else {
         // Only log if we're in the browser to avoid SSR warnings
         if (typeof window !== 'undefined') {
-            console.debug('No valid token found for API request');
         }
     }
     
@@ -59,7 +57,6 @@ export const authenticateUser = async (email, password) => {
         const token = body?.data?.token;
         if (token) {
             if (!isValidJWT(token)) {
-                console.error('Invalid JWT format received from server');
                 throw new Error('Invalid token format received from server');
             }
             localStorage.setItem('token', token);
@@ -72,7 +69,6 @@ export const authenticateUser = async (email, password) => {
         }
         return body;
     } catch (error) {
-        console.error('Login error:', error);
         throw error;
     }
 };
@@ -105,7 +101,6 @@ export const registerUser = async (name, email, password) => {
         const token = body?.data?.token;
         if (token) {
             if (!isValidJWT(token)) {
-                console.error('Invalid JWT format received from server');
                 throw new Error('Invalid token format received from server');
             }
             localStorage.setItem('token', token);
@@ -118,7 +113,6 @@ export const registerUser = async (name, email, password) => {
         }
         return body;
     } catch (error) {
-        console.error('Registration error:', error);
         throw error;
     }
 };
@@ -134,7 +128,6 @@ export const logoutUser = () => {
 
 export const retrieveProteinDetail = async (proteinId) => {
     try {
-        console.log('Fetching protein:', proteinId);
         const token = getValidToken();
         const res = await fetch(`/api/v1/protein/${encodeURIComponent(proteinId)}`, {
             headers: {
@@ -152,7 +145,6 @@ export const retrieveProteinDetail = async (proteinId) => {
         }
         let responseData;
         try { responseData = text ? JSON.parse(text) : null; } catch (_) { throw new Error('Invalid API response format'); }
-        console.log('API Response:', responseData);
 
         if (!responseData || !responseData.data || !responseData.file) {
             throw new Error('Invalid API response format');
@@ -168,7 +160,6 @@ export const retrieveProteinDetail = async (proteinId) => {
             file: fileBlob,
         };
     } catch (error) {
-        console.error('Error in retrieveProteinDetail:', error);
         const errorMessage = error.message || 'Network Error';
         throw new Error(errorMessage);
     }

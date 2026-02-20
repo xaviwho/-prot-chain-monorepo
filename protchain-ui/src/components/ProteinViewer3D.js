@@ -43,46 +43,31 @@ const loadMolstarLibrary = async () => {
  */
 const fetchPDBData = async (pdbId) => {
   try {
-    console.log("=== PDB FETCH DEBUG ===");
-    console.log("Fetching PDB data for ID:", pdbId);
     
     // Fetch directly from RCSB PDB
-    console.log(`Step 1: Fetching PDB structure ${pdbId} from RCSB...`);
     const pdbUrl = `https://files.rcsb.org/download/${pdbId}.pdb`;
-    console.log("RCSB URL:", pdbUrl);
     
     const pdbResponse = await fetch(pdbUrl);
-    console.log("RCSB response status:", pdbResponse.status);
     
     if (pdbResponse.ok) {
       const pdbData = await pdbResponse.text();
-      console.log(`✅ Successfully fetched ${pdbId} from RCSB PDB, length:`, pdbData.length);
-      console.log("First 200 chars:", pdbData.substring(0, 200));
       return pdbData;
     }
     
     // Try alternative RCSB endpoint
-    console.log("Step 2: Trying alternative RCSB endpoint...");
     const altUrl = `https://files.rcsb.org/view/${pdbId}.pdb`;
-    console.log("Alternative RCSB URL:", altUrl);
     
     const altResponse = await fetch(altUrl);
-    console.log("Alternative RCSB response status:", altResponse.status);
     
     if (altResponse.ok) {
       const pdbData = await altResponse.text();
-      console.log(`✅ Successfully fetched ${pdbId} from RCSB PDB (alternative), length:`, pdbData.length);
       return pdbData;
     }
     
     // If all else fails, throw an error
-    console.log("❌ All PDB fetch attempts failed");
-    console.log("=== END PDB FETCH DEBUG ===");
     throw new Error(`Unable to fetch protein structure data for PDB ID: ${pdbId}. Please check the PDB ID and try again.`);
     
   } catch (error) {
-    console.error('❌ PDB fetch error:', error);
-    console.log("=== END PDB FETCH DEBUG ===");
     throw error;
   }
 };
@@ -94,31 +79,21 @@ const fetchPDBData = async (pdbId) => {
  */
 const fetchRealBindingPockets = async (pdbId) => {
   try {
-    console.log("=== REAL BINDING POCKETS FETCH ===");
-    console.log("Fetching real binding pockets for PDB ID:", pdbId);
     
     // Call our new API endpoint that connects to BioAPI
     const response = await fetch(`/api/workflow/${pdbId}/binding-pockets`);
-    console.log("Binding pockets API response status:", response.status);
     
     if (!response.ok) {
-      console.error("Failed to fetch binding pockets:", response.status);
       return [];
     }
     
     const data = await response.json();
     const bindingSites = data.binding_sites || [];
     
-    console.log(`✅ Fetched ${bindingSites.length} real binding pockets for ${pdbId}`);
-    console.log("Detection method:", data.detection_method);
-    console.log("Sample binding site:", bindingSites[0]);
-    console.log("=== END REAL BINDING POCKETS FETCH ===");
     
     return bindingSites;
     
   } catch (error) {
-    console.error('❌ Real binding pockets fetch error:', error);
-    console.log("=== END REAL BINDING POCKETS FETCH ===");
     return []; // Return empty array on error, don't fail the viewer
   }
 };
@@ -135,7 +110,6 @@ const waitForElement = async (elementRef, maxAttempts = 10) => {
       return elementRef.current;
     }
     
-    console.log(`Waiting for container... attempt ${attempts + 1}`);
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   
@@ -152,11 +126,9 @@ const waitForElement = async (elementRef, maxAttempts = 10) => {
  */
 const addPocketSpheresToMolstar = async (viewer, bindingSites) => {
   if (!bindingSites || bindingSites.length === 0) {
-    console.log('No binding sites to highlight');
     return;
   }
 
-  console.log('Adding pocket spheres to Molstar for', bindingSites.length, 'binding sites');
   
   try {
     // Create shapes for each pocket
@@ -182,7 +154,6 @@ const addPocketSpheresToMolstar = async (viewer, bindingSites) => {
         color = { r: 251, g: 192, b: 45 }; // Yellow - lower druggability
       }
       
-      console.log(`Creating sphere for pocket ${siteId} at (${center.x.toFixed(1)}, ${center.y.toFixed(1)}, ${center.z.toFixed(1)}) with radius ${radius.toFixed(1)}`);
       
       // Create sphere shape data
       const sphere = {
@@ -199,7 +170,6 @@ const addPocketSpheresToMolstar = async (viewer, bindingSites) => {
     
     // Try to add shapes to Molstar viewer
     if (viewer.builders?.structure?.shape && shapes.length > 0) {
-      console.log(`Adding ${shapes.length} pocket spheres to Molstar viewer`);
       
       // Create shape representation
       const shapeData = {
@@ -209,16 +179,12 @@ const addPocketSpheresToMolstar = async (viewer, bindingSites) => {
       
       try {
         await viewer.builders.structure.shape.fromData(shapeData);
-        console.log('✅ Pocket spheres added successfully');
       } catch (shapeError) {
-        console.log('❌ Failed to add shapes:', shapeError.message);
       }
     } else {
-      console.log('❌ Molstar shape builder not available');
     }
     
   } catch (error) {
-    console.error('Error adding pocket spheres to Molstar:', error);
   }
 };
 
@@ -246,8 +212,6 @@ const initializeViewer = async (container, pdbId, providedBindingSites = null, s
     throw new Error('Molstar library not available');
   }
 
-  console.log('Creating Molstar viewer with container:', container);
-  console.log('Container dimensions:', container.offsetWidth, 'x', container.offsetHeight);
   
   try {
     // Create the Molstar viewer instance with interactive features
@@ -269,11 +233,9 @@ const initializeViewer = async (container, pdbId, providedBindingSites = null, s
       collapseRightPanel: true,
     });
 
-    console.log('Molstar viewer created:', viewer);
 
     // Fetch and load protein data
     const pdbData = await fetchPDBData(pdbId);
-    console.log('PDB data length:', pdbData ? pdbData.length : 'null');
     
     if (!pdbData || pdbData.length === 0) {
       throw new Error('No PDB data available');
@@ -281,7 +243,6 @@ const initializeViewer = async (container, pdbId, providedBindingSites = null, s
 
     // Load structure from PDB data
     const data = await viewer.loadStructureFromData(pdbData, 'pdb', { dataLabel: `Protein ${pdbId}` });
-    console.log('Structure loaded:', data);
 
     // Fetch real binding pockets only for binding site analysis stage
     let bindingSitesToUse = [];
@@ -289,11 +250,8 @@ const initializeViewer = async (container, pdbId, providedBindingSites = null, s
       bindingSitesToUse = providedBindingSites;
       if (!bindingSitesToUse) {
         try {
-          console.log("Fetching real binding pockets for PDB ID:", pdbId);
           bindingSitesToUse = await fetchRealBindingPockets(pdbId);
-          console.log("Fetched binding pockets:", bindingSitesToUse?.length || 0);
         } catch (error) {
-          console.warn("Failed to fetch real binding pockets:", error);
           bindingSitesToUse = [];
         }
       }
@@ -301,17 +259,13 @@ const initializeViewer = async (container, pdbId, providedBindingSites = null, s
 
     // Add real binding site pocket visualization using Molstar's representation system
     if (bindingSitesToUse && bindingSitesToUse.length > 0) {
-      console.log('Adding REAL pocket visualization for', bindingSitesToUse.length, 'binding sites');
       await addPocketSpheresToMolstar(viewer, bindingSitesToUse);
     } else {
-      console.log('No real binding pockets detected for', pdbId);
     }
     
-    console.log('Molstar viewer initialization complete with REAL pocket visualization');
 
     return { viewer, bindingSites: bindingSitesToUse };
   } catch (error) {
-    console.error('Failed to initialize Molstar viewer:', error);
     throw error;
   }
 };
@@ -346,17 +300,11 @@ function ProteinViewer3D({
   const targetPdbId = pdbId || '2HIU';
   
   // Debug logging to see what PDB ID we're actually using
-  console.log("=== PROTEIN VIEWER DEBUG ===");
-  console.log("Received pdbId prop:", pdbId);
-  console.log("Target PDB ID being used:", targetPdbId);
-  console.log("WorkflowId:", workflowId);
-  console.log("=== END PROTEIN VIEWER DEBUG ===");
 
   /**
    * Handle pocket click to highlight specific pocket in 3D viewer
    */
   const handlePocketClick = async (pocket) => {
-    console.log("🔍 Pocket clicked:", pocket.id);
     
     // Fix: Only set selected pocket if it's different from current selection
     setSelectedPocket(prevSelected => {
@@ -366,15 +314,6 @@ function ProteinViewer3D({
       return pocket.id; // Select the new pocket
     });
     
-    // Log detailed pocket information
-    console.log(`📍 Selected pocket ${pocket.id}:`, {
-      center: `(${pocket.center.x.toFixed(1)}, ${pocket.center.y.toFixed(1)}, ${pocket.center.z.toFixed(1)})`,
-      volume: pocket.volume,
-      druggability: pocket.druggability_score.toFixed(3),
-      hydrophobicity: (pocket.hydrophobicity * 100).toFixed(0) + '%',
-      residueCount: pocket.nearby_residues?.length || 0,
-      topResidues: pocket.nearby_residues?.slice(0, 3).map(r => `${r.chain}:${r.residue_number}`).join(', ')
-    });
     
     // Try to focus camera and highlight pocket in Molstar
     if (viewer && pocket) {
@@ -389,13 +328,11 @@ function ProteinViewer3D({
           // Simple camera focus attempt
           if (typeof camera.focus === 'function') {
             await camera.focus(center, 1500);
-            console.log(`✅ Camera focused on pocket ${pocket.id}`);
           } else if (typeof camera.setState === 'function') {
             await camera.setState({
               target: { x: center[0], y: center[1], z: center[2] },
               radius: 25
             }, 1500);
-            console.log(`✅ Camera positioned for pocket ${pocket.id}`);
           }
         }
         
@@ -403,7 +340,6 @@ function ProteinViewer3D({
         await highlightPocketInMolstar(viewer, pocket);
         
       } catch (error) {
-        console.log("❌ Camera/highlight error:", error.message);
       }
     }
   };
@@ -432,11 +368,9 @@ function ProteinViewer3D({
           alpha: 0.6
         };
         
-        console.log(`🎯 Highlighting pocket ${pocket.id} at ${center} with radius ${radius.toFixed(1)}`);
       }
       
     } catch (error) {
-      console.log("❌ Pocket highlighting failed:", error.message);
     }
   };
 
@@ -446,12 +380,9 @@ function ProteinViewer3D({
   useEffect(() => {
     const loadLibrary = async () => {
       try {
-        console.log("Loading Molstar library");
         await loadMolstarLibrary();
-        console.log("Molstar library loaded successfully");
         setLoading(false); // Allow container to render
       } catch (err) {
-        console.error('Failed to load Molstar library:', err);
         setError('Failed to load 3D viewer library');
         setLoading(false);
       }
@@ -471,24 +402,17 @@ function ProteinViewer3D({
     // Add a small delay to ensure DOM is fully rendered
     const timer = setTimeout(() => {
       if (!containerRef.current) {
-        console.error("Container ref is null after timeout");
         setError('Viewer container not found');
         return;
       }
 
       const setupViewer = async () => {
         try {
-          console.log("Container ref available:", !!containerRef.current);
-          console.log("Container dimensions:", containerRef.current.offsetWidth, 'x', containerRef.current.offsetHeight);
-          console.log("Initializing Molstar viewer with PDB ID:", targetPdbId);
-          console.log("Binding sites for visualization:", bindingSites?.length || 0);
           
           const result = await initializeViewer(containerRef.current, targetPdbId, bindingSites, stage);
-          console.log("Molstar viewer setup completed successfully");
           setViewer(result.viewer);
           setRealBindingSites(result.bindingSites);
         } catch (err) {
-          console.error('Failed to setup protein viewer:', err);
           setError(err.message || 'Failed to load protein structure');
         }
       };
@@ -513,11 +437,9 @@ function ProteinViewer3D({
     );
 
     if (!selectedPocket) {
-      console.warn('Selected pocket not found:', selectedPocketId);
       return;
     }
 
-    console.log('Focusing camera on pocket:', selectedPocket);
 
     // Focus camera on the selected pocket
     const focusOnPocket = async () => {
@@ -541,7 +463,6 @@ function ProteinViewer3D({
               beta: camera.state.beta
             });
             
-            console.log('Camera focused using Method 1');
           }
           
           // Method 2: Try behavior manager
@@ -554,17 +475,14 @@ function ProteinViewer3D({
               }]
             }]);
             
-            console.log('Camera focused using Method 2');
           }
           
           // Method 3: Direct canvas manipulation
           else if (plugin?.canvas3d?.requestDraw) {
             plugin.canvas3d.requestDraw(true);
-            console.log('Canvas redrawn using Method 3');
           }
         }
       } catch (error) {
-        console.error('Failed to focus camera on pocket:', error);
       }
     };
 

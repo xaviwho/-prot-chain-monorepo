@@ -18,12 +18,9 @@ export async function GET(request, { params }) {
     const workflowDir = getWorkflowPath(id);
     const resultsPath = getWorkflowFilePath(id, 'results.json');
     
-    console.log(`Refreshing results for workflow: ${id}`);
-    console.log(`Results path: ${resultsPath}`);
     
     // Check if the results file exists
     if (!fs.existsSync(resultsPath)) {
-      console.log('Local results.json not found, attempting to fetch from bioapi');
       
       // Try to get bioapi workflow ID from mapping file
       const mappingPath = getWorkflowFilePath(id, 'bioapi-mapping.json');
@@ -33,7 +30,6 @@ export async function GET(request, { params }) {
           
           if (mappingData && mappingData.bioapi_workflow_id) {
             const bioApiWorkflowId = mappingData.bioapi_workflow_id;
-            console.log(`Checking for structure processing results for workflow: ${bioApiWorkflowId}`);
             
             // Check if bioapi has generated structure processing results
             // The bioapi structure endpoint saves results to /app/core/config.upload_dir/structures/{workflow_id}/results.json
@@ -54,7 +50,6 @@ export async function GET(request, { params }) {
               });
               
               if (structureInfoResponse.data && structureInfoResponse.data.status === 'success') {
-                console.log('Successfully fetched structure processing results from bioapi');
                 
                 // Save the results locally for future use
                 fs.writeFileSync(resultsPath, JSON.stringify(structureInfoResponse.data, null, 2));
@@ -67,7 +62,6 @@ export async function GET(request, { params }) {
                 });
               }
             } catch (structureInfoError) {
-              console.log('Structure info endpoint not available, trying alternative approach');
               
               // Alternative: Check if the bioapi has results by looking for the results file
               // Since the bioapi structure processing saves results to its internal directory,
@@ -93,7 +87,6 @@ export async function GET(request, { params }) {
             }
           }
         } catch (bioApiError) {
-          console.error('Failed to fetch results from bioapi:', bioApiError.message);
           // Continue to return 404 if bioapi fetch fails
         }
       }
@@ -110,9 +103,7 @@ export async function GET(request, { params }) {
     
     try {
       resultsData = JSON.parse(resultsContent);
-      console.log('Successfully parsed results.json');
     } catch (error) {
-      console.error('Error parsing results file:', error);
       return NextResponse.json(
         { error: 'Invalid results file format' },
         { status: 500 }
@@ -127,7 +118,6 @@ export async function GET(request, { params }) {
     });
     
   } catch (error) {
-    console.error('Error refreshing results:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to refresh results' },
       { status: 500 }

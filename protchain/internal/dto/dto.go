@@ -159,11 +159,25 @@ type UserStatsResponse struct {
 	TeamCount          int `json:"team_count"`
 }
 
+// Pagination
+type PaginationMeta struct {
+	Page       int `json:"page"`
+	PerPage    int `json:"per_page"`
+	Total      int `json:"total"`
+	TotalPages int `json:"total_pages"`
+}
+
 // Generic response DTOs
 type SuccessResponse struct {
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
 	Message string      `json:"message,omitempty"`
+}
+
+type PaginatedResponse struct {
+	Success    bool           `json:"success"`
+	Data       interface{}    `json:"data"`
+	Pagination PaginationMeta `json:"pagination"`
 }
 
 type ErrorResponse struct {

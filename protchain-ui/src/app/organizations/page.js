@@ -84,7 +84,6 @@ function OrganizationsPageContent() {
         setOrganizations([]);
       }
     } catch (err) {
-      console.error('Organizations loading error:', err);
       
       // Handle different types of errors
       if (err.message.includes('Server error:')) {
@@ -134,7 +133,6 @@ function OrganizationsPageContent() {
         throw new Error('Invalid response format from server');
       }
     } catch (err) {
-      console.error('Organization creation error:', err);
       
       // Handle different types of errors
       if (err.response) {
@@ -184,7 +182,6 @@ function OrganizationsPageContent() {
         throw new Error('Failed to delete organization');
       }
     } catch (err) {
-      console.error('Organization deletion error:', err);
       setError(`Failed to delete organization: ${err.message}`);
     } finally {
       setDeleting(false);
@@ -227,7 +224,6 @@ function OrganizationsPageContent() {
         throw new Error('Failed to send invitation');
       }
     } catch (err) {
-      console.error('Organization sharing error:', err);
       setError(`Failed to share organization: ${err.message}`);
     } finally {
       setSharing(false);

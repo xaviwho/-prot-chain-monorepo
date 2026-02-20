@@ -33,7 +33,6 @@ export async function GET(request, { params }) {
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error checking workflow:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to check workflow' },
       { status: 500 }

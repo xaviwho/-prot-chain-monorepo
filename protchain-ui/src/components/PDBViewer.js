@@ -14,12 +14,10 @@ const PDBViewer = ({ pdbId, workflowId, style = {} }) => {
     
     // Return if neither pdbId nor workflowId is provided
     if (!pdbId && !workflowId) {
-      console.log('No PDB ID or workflow ID provided');
       setLoading(false);
       return;
     }
 
-    console.log('PDBViewer initializing with:', { pdbId, workflowId });
     
     const setupViewer = async () => {
       try {        
@@ -41,7 +39,6 @@ const PDBViewer = ({ pdbId, workflowId, style = {} }) => {
         setPdbUrl(url);
         setLoading(false);
       } catch (err) {
-        console.error('Error in PDBViewer:', err);
         setError(err.message);
         setLoading(false);
       }

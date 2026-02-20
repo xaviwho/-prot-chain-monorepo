@@ -107,7 +107,6 @@ export const useUser = () => {
           exp: payload.exp
         });
       } catch (error) {
-        console.error('Error decoding token:', error);
         setUser(null);
       }
     } else {

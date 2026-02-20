@@ -170,16 +170,12 @@ export async function GET(request, { params }) {
   try {
     // Temporarily bypass JWT validation for debugging (matching workflows fix)
     const authHeader = request.headers.get('authorization');
-    console.log('Organization detail request - auth header present:', !!authHeader);
     
     // Continue without strict authentication for development
 
     const { id } = params;
-    console.log('Organization detail API called with ID:', id);
-    console.log('Available organization IDs:', organizations.map(org => org.id));
     
     if (!id) {
-      console.log('No ID provided');
       return NextResponse.json(
         { error: 'Organization ID is required' },
         { status: 400 }
@@ -188,24 +184,20 @@ export async function GET(request, { params }) {
 
     // Find organization by ID
     const organization = organizations.find(org => org.id === id);
-    console.log('Found organization:', !!organization);
     
     if (!organization) {
-      console.log('Organization not found for ID:', id);
       return NextResponse.json(
         { error: 'Organization not found' },
         { status: 404 }
       );
     }
 
-    console.log('Returning organization data for:', organization.name);
     return NextResponse.json({
       success: true,
       data: organization
     });
 
   } catch (error) {
-    console.error('Organization fetch error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch organization' },
       { status: 500 }
@@ -256,7 +248,6 @@ export async function POST(request, { params }) {
 
     // In a real implementation, this would send an email invitation
     // For now, we'll just simulate success
-    console.log(`Invitation sent to ${email} for organization ${organizations[orgIndex].name}`);
 
     return NextResponse.json({
       success: true,
@@ -270,7 +261,6 @@ export async function POST(request, { params }) {
     });
 
   } catch (error) {
-    console.error('Organization invitation error:', error);
     return NextResponse.json(
       { error: 'Failed to send invitation' },
       { status: 500 }

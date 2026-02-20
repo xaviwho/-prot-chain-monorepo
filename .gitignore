@@ -22,8 +22,12 @@ yarn-error.log*
 /.next/
 /out/
 
-# Ignore local env files
-# .env*.local
+# Ignore env files with secrets (only .env.example is tracked)
+.env
+.env.local
+.env*.local
+protchain/.env
+protchain-ui/.env.local
 
 # Ignore mangled path directories
 C??Users?*

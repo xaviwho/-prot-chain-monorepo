@@ -12,7 +12,6 @@ export async function POST(request, { params }) {
   const resolvedParams = await Promise.resolve(params);
   const id = resolvedParams.id;
   
-  console.log(`Uploading structure file for workflow: ${id}`);
   
   try {
     // Use the path utility function to get a normalized workflow path
@@ -20,7 +19,6 @@ export async function POST(request, { params }) {
     
     // Ensure the workflow directory exists
     if (!existsSync(workflowDir)) {
-      console.log(`Creating workflow directory: ${workflowDir}`);
       mkdirSync(workflowDir, { recursive: true });
     }
     
@@ -53,7 +51,6 @@ export async function POST(request, { params }) {
     
     // Write the file to the workflow directory
     await writeFile(inputPath, buffer);
-    console.log(`Saved input.pdb to: ${normalizePath(inputPath)}`);
     
     // Return success response
     return NextResponse.json({
@@ -62,7 +59,6 @@ export async function POST(request, { params }) {
       filePath: normalizePath(inputPath)
     });
   } catch (err) {
-    console.error(`Error uploading structure file: ${err.message}`);
     return NextResponse.json(
       { error: err.message || 'Failed to upload structure file' },
       { status: 500 }

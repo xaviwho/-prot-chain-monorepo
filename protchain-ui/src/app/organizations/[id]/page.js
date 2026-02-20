@@ -125,9 +125,7 @@ function OrganizationDetailPageContent() {
   const fetchOrganization = async () => {
     try {
       setLoading(true);
-      console.log('Fetching organization with ID:', orgId);
       const token = localStorage.getItem('token') || document.cookie.split('token=')[1]?.split(';')[0];
-      console.log('Using token:', token ? 'present' : 'missing');
       
       const response = await fetch(`/api/v1/teams/organizations?id=${orgId}`, {
         headers: {
@@ -136,21 +134,15 @@ function OrganizationDetailPageContent() {
         }
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log('Error response:', errorText);
         throw new Error('Failed to fetch organization');
       }
 
       const data = await response.json();
-      console.log('Received data:', data);
-      console.log('Organization data:', data.data);
       setOrganization(data.data);
     } catch (err) {
-      console.error('Fetch error:', err);
       setError('Failed to load organization: ' + err.message);
     } finally {
       setLoading(false);

@@ -12,29 +12,24 @@ export async function POST(request, { params }) {
   const resolvedParams = await Promise.resolve(params);
   const id = resolvedParams.id;
   
-  console.log(`Validating workflow files for: ${id}`);
   
   try {
     // Use the path utility function to get a normalized workflow path
     const workflowDir = getWorkflowPath(id);
     
-    console.log(`Checking workflow directory: ${workflowDir}`);
     
     // Check if the workflow directory exists
     if (!fs.existsSync(workflowDir)) {
-      console.log(`Creating workflow directory: ${workflowDir}`);
       fs.mkdirSync(workflowDir, { recursive: true });
     }
     
     // Check for input.pdb - we don't create a placeholder as this requires real data
     const inputPath = getWorkflowFilePath(id, 'input.pdb');
     const inputExists = fs.existsSync(inputPath);
-    console.log(`Input PDB ${inputExists ? 'exists' : 'does not exist'} at: ${normalizePath(inputPath)}`);
     
     // Check for processed.pdb - this should be created by the structure preparation stage
     const processedPath = getWorkflowFilePath(id, 'processed.pdb');
     const processedExists = fs.existsSync(processedPath);
-    console.log(`Processed PDB ${processedExists ? 'exists' : 'does not exist'} at: ${normalizePath(processedPath)}`);
     
     // Create or update results.json if it doesn't exist (only for registration purposes)
     const resultsPath = getWorkflowFilePath(id, 'results.json');
@@ -51,15 +46,12 @@ export async function POST(request, { params }) {
         if (!existingData.STRUCTURE_PREPARATION) {
           existingData.STRUCTURE_PREPARATION = true;
           fs.writeFileSync(resultsPath, JSON.stringify(existingData, null, 2));
-          console.log('Updated existing results.json file with STRUCTURE_PREPARATION flag');
         }
       } catch (err) {
-        console.error(`Error reading existing results.json: ${err.message}`);
       }
     } else {
       // Only create a minimal results.json for registration purposes
       fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
-      console.log(`Created minimal results.json at: ${resultsPath} for registration purposes`);
       resultsExists = true;
     }
     
@@ -90,7 +82,6 @@ export async function POST(request, { params }) {
                'run_binding_site_analysis'
     });
   } catch (err) {
-    console.error(`Error validating workflow files: ${err.message}`);
     return NextResponse.json(
       { error: err.message || 'Failed to validate workflow files' },
       { status: 500 }

@@ -11,7 +11,6 @@ export async function POST(request, { params }) {
   const resolvedParams = await Promise.resolve(params);
   const id = resolvedParams.id;
   
-  console.log(`Running structure preparation for workflow: ${id}`);
   
   try {
     // Get the workflow directory path
@@ -52,7 +51,6 @@ export async function POST(request, { params }) {
         inputLigands.add(resName);
       }
     });
-    console.log('Ligands in input PDB:', Array.from(inputLigands));
 
     // 2. Remove water molecules and common buffer components, but preserve all other HETATM records
     const nonBiologicalHeteroatoms = ['HOH', 'WAT', 'SO4', 'PO4', 'GOL', 'EDO', 'ACT', 'DMS', 'CIT', 'PEG'];
@@ -82,7 +80,6 @@ export async function POST(request, { params }) {
       }
     });
     
-    console.log(`Found ${Object.keys(ligandInfo).length} unique ligands/heteroatoms`);
     
     // Filter out non-biological ligands
     for (const key in ligandInfo) {
@@ -110,8 +107,6 @@ export async function POST(request, { params }) {
       })
       .join('\n');
     
-    console.log('Preserved ligands:', Array.from(preservedLigands));
-    console.log('Removed ligands:', Array.from(removedLigands));
 
     // 3. All biologically relevant ligands/cofactors are now preserved by default.
     
@@ -200,7 +195,6 @@ export async function POST(request, { params }) {
     }
     
     processedPdb = processedLines.join('\n');
-    console.log('Fixed PDB format issues');
     
     // 6. Add a REMARK section explaining the preparation steps
     const preparationRemarks = [
@@ -215,11 +209,9 @@ export async function POST(request, { params }) {
     
     // Insert remarks at the beginning of the file
     processedPdb = preparationRemarks.join('\n') + '\n' + processedPdb;
-    console.log('Added preparation remarks');
     
     // Write the processed PDB file
     fs.writeFileSync(processedPath, processedPdb);
-    console.log(`Created processed.pdb at: ${normalizePath(processedPath)}`);
     
     // Calculate basic structure metrics
     const atomCount = (inputPdb.match(/^ATOM/gm) || []).length;
@@ -257,7 +249,6 @@ export async function POST(request, { params }) {
       try {
         resultsData = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
       } catch (err) {
-        console.error(`Error reading existing results.json: ${err.message}`);
         // Continue with empty resultsData
       }
     }
@@ -267,7 +258,6 @@ export async function POST(request, { params }) {
     
     // Write the updated results.json
     fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
-    console.log(`Updated results.json at: ${normalizePath(resultsPath)}`);
     
     // Return success response
     return NextResponse.json({
@@ -281,7 +271,6 @@ export async function POST(request, { params }) {
       }
     });
   } catch (err) {
-    console.error(`Error running structure preparation: ${err.message}`);
     return NextResponse.json(
       { error: err.message || 'Failed to run structure preparation' },
       { status: 500 }

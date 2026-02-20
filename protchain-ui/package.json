@@ -14,22 +14,15 @@
     "@ethersproject/providers": "^5.7.2",
     "@mui/icons-material": "^5.11.16",
     "@mui/material": "^5.13.0",
-    "@web3-react/core": "^8.2.3",
-    "@web3-react/injected-connector": "^6.0.7",
     "3dmol": "^2.5.1",
     "axios": "^1.8.4",
-    "cuid": "^3.0.0",
     "ethers": "^5.8.0",
     "file-saver": "^2.0.5",
     "js-cookie": "^3.0.5",
     "jsonwebtoken": "^9.0.2",
     "next": "15.1.5",
-    "ngl": "^2.4.0",
-    "papaparse": "^5.5.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "three": "^0.172.0",
-    "web3": "^4.5.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

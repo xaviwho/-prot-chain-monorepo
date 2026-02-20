@@ -34,7 +34,6 @@ export async function POST(request) {
       const workflowDir = path.join(uploadsDir, workflowId);
       fs.mkdirSync(workflowDir, { recursive: true });
       
-      console.log(`Created new workflow directory for benchmark: ${workflowDir}`);
       
       // Return success with the generated ID
       return NextResponse.json({
@@ -77,15 +76,12 @@ export async function POST(request) {
         const resultsContent = fs.readFileSync(resultsPath, 'utf8');
         resultsData = JSON.parse(resultsContent);
       } catch (parseError) {
-        console.error('Error parsing results.json:', parseError);
       }
     }
     
     // Create complete WSL-compatible path for the backend
     const wslPath = `/mnt/c/Users/NSL/Downloads/prot-chain/uploads/structures/${workflowId}`;
     
-    console.log('Registering workflow with Windows path:', workflowDir);
-    console.log('And WSL path:', wslPath);
     
     // Create a properly formatted workflow object for the backend
     const workflowData = {
@@ -121,7 +117,6 @@ export async function POST(request) {
       }
     };
     
-    console.log(JSON.stringify(workflowData, null, 2));
     
     // Register the workflow with the backend
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
@@ -141,7 +136,6 @@ export async function POST(request) {
           errorMessage = `Backend error: ${errorData.detail}`;
         }
       } catch (parseError) {
-        console.error('Error parsing error response:', parseError);
       }
       
       return NextResponse.json(
@@ -161,7 +155,6 @@ export async function POST(request) {
       workflow: data
     });
   } catch (error) {
-    console.error('Error registering workflow:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to register workflow' },
       { status: 500 }

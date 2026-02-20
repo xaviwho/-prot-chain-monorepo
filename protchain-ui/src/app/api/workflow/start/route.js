@@ -13,7 +13,6 @@ export async function POST(request) {
     }
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
-    console.log('Creating workflow at:', `${apiUrl}/api/v1/workflows`);
     
     // Call the bioapi endpoint
     const res = await fetch(`${apiUrl}/api/v1/workflows`, {
@@ -27,7 +26,6 @@ export async function POST(request) {
     const data = await res.json();
     
     if (!res.ok) {
-      console.error('BioAPI error:', data);
       return NextResponse.json(
         { error: data.detail || 'Failed to start workflow' },
         { status: res.status }
@@ -36,7 +34,6 @@ export async function POST(request) {
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error starting workflow:', error);
     return NextResponse.json(
       { error: 'Failed to start workflow' },
       { status: 500 }

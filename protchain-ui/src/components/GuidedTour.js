@@ -273,7 +273,6 @@ const GuidedTour = ({ open, onClose, onComplete }) => {
         await simulateAction(currentStep.action);
         setCompletedSteps(prev => new Set([...prev, activeStep]));
       } catch (error) {
-        console.error('Tour action failed:', error);
       } finally {
         setIsProcessing(false);
       }

@@ -27,7 +27,6 @@ export async function POST(request, { params }) {
         }
       } catch (parseError) {
         // If we can't parse the error response, use a generic message
-        console.error('Error parsing error response:', parseError);
       }
       
       // Use status-specific error messages
@@ -43,7 +42,6 @@ export async function POST(request, { params }) {
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error starting binding site analysis:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to start binding site analysis' },
       { status: 500 }

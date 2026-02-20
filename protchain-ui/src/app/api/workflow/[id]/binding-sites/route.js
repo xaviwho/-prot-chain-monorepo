@@ -22,15 +22,12 @@ export async function GET(request, { params }) {
         const resultsContent = fs.readFileSync(resultsPath, 'utf8');
         const resultsData = JSON.parse(resultsContent);
         
-        console.log('Checking for binding site data in:', resultsPath);
-        console.log('Results data keys:', Object.keys(resultsData));
         
         // Check for binding sites in binding_site_analysis
         if (resultsData.binding_site_analysis && 
             resultsData.binding_site_analysis.binding_sites && 
             resultsData.binding_site_analysis.binding_sites.length > 0) {
           
-          console.log(`Found ${resultsData.binding_site_analysis.binding_sites.length} binding sites in binding_site_analysis`);
           return NextResponse.json({
             binding_sites: resultsData.binding_site_analysis.binding_sites,
             method: resultsData.binding_site_analysis.method || 'unknown',
@@ -43,7 +40,6 @@ export async function GET(request, { params }) {
             Array.isArray(resultsData.binding_sites) && 
             resultsData.binding_sites.length > 0) {
           
-          console.log(`Found ${resultsData.binding_sites.length} binding sites in direct binding_sites array`);
           return NextResponse.json({
             binding_sites: resultsData.binding_sites,
             method: resultsData.method || 'unknown',
@@ -55,12 +51,10 @@ export async function GET(request, { params }) {
           });
         }
       } catch (parseError) {
-        console.error('Error parsing results file:', parseError);
       }
     }
     
     // If no local results, try the backend API
-    console.log('No local binding site results found, trying backend API...');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
     const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/binding-sites`, {
       method: 'GET',
@@ -77,7 +71,6 @@ export async function GET(request, { params }) {
     }
     
     // If backend API fails or returns no binding sites, try to run the guaranteed method
-    console.log('Backend API returned no binding sites, running guaranteed binding site detection...');
     
     // Check if we have a processed PDB file
     const pdbPath = getWorkflowFilePath(id, 'processed.pdb');
@@ -95,7 +88,6 @@ export async function GET(request, { params }) {
     
     if (guaranteedResponse.ok) {
       const guaranteedData = await guaranteedResponse.json();
-      console.log('Guaranteed binding site detection succeeded');
       return NextResponse.json(guaranteedData);
     }
     
@@ -105,7 +97,6 @@ export async function GET(request, { params }) {
       { status: 404 }
     );
   } catch (error) {
-    console.error('Error fetching binding sites:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch binding sites' },
       { status: 500 }

@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 
-// PureChain configuration
-const PURECHAIN_RPC_URL = 'https://purechainnode.com:8547';
+// PureChain configuration from environment
+const PURECHAIN_RPC_URL = process.env.BLOCKCHAIN_RPC || 'https://purechainnode.com:8547';
 const CHAIN_ID = 900520900520;
 
-// Contract configuration - using direct values since env vars aren't loading
-const WORKFLOW_TRACKER_ADDRESS = process.env.WORKFLOW_TRACKER_ADDRESS || '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d4d4';
-const PRIVATE_KEY = process.env.PRIVATE_KEY || '0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d';
+// Contract configuration — no fallbacks, must be set in environment
+const WORKFLOW_TRACKER_ADDRESS = process.env.WORKFLOW_TRACKER_ADDRESS;
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
 // Workflow Tracker ABI (simplified for result commits)
 const WORKFLOW_TRACKER_ABI = [
@@ -39,11 +39,9 @@ const WORKFLOW_TRACKER_ABI = [
 
 export async function POST(request) {
   try {
-    console.log('=== BLOCKCHAIN COMMIT DEBUG ===');
     const body = await request.json();
-    console.log('Request body:', body);
     const { workflowId, ipfsHash, resultsHash, stage } = body;
-    
+
     if (!workflowId || !ipfsHash || !resultsHash || !stage) {
       return NextResponse.json(
         { error: 'Missing required fields: workflowId, ipfsHash, resultsHash, stage' },
@@ -51,63 +49,36 @@ export async function POST(request) {
       );
     }
 
-    console.log('Environment check:');
-    console.log('process.env.WORKFLOW_TRACKER_ADDRESS:', process.env.WORKFLOW_TRACKER_ADDRESS);
-    console.log('process.env.PRIVATE_KEY:', process.env.PRIVATE_KEY ? 'Present' : 'Missing');
-    console.log('All env keys:', Object.keys(process.env).filter(key => key.includes('WORKFLOW') || key.includes('PRIVATE')));
-    
     if (!WORKFLOW_TRACKER_ADDRESS || !PRIVATE_KEY) {
-      console.error('Missing environment variables:');
-      console.error('WORKFLOW_TRACKER_ADDRESS:', WORKFLOW_TRACKER_ADDRESS);
-      console.error('PRIVATE_KEY:', PRIVATE_KEY ? 'Present' : 'Missing');
       return NextResponse.json(
-        { error: 'Blockchain configuration missing. Check environment variables WORKFLOW_TRACKER_ADDRESS and PRIVATE_KEY.' },
+        { error: 'Blockchain configuration missing. Set WORKFLOW_TRACKER_ADDRESS and PRIVATE_KEY environment variables.' },
         { status: 500 }
       );
     }
 
-    // Initialize provider and wallet - bypass all network detection
-    console.log('Connecting to PureChain at:', PURECHAIN_RPC_URL);
-    console.log('Chain ID:', CHAIN_ID);
-    
-    // Create a simple provider without network detection
+    // Initialize provider and wallet
     const provider = new ethers.providers.JsonRpcProvider(PURECHAIN_RPC_URL);
-    
-    // Skip network detection entirely - create wallet directly
     const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    console.log('Wallet address:', wallet.address);
-    
-    // Initialize contract
     const contract = new ethers.Contract(WORKFLOW_TRACKER_ADDRESS, WORKFLOW_TRACKER_ABI, wallet);
 
-    console.log(`Committing results to blockchain for workflow ${workflowId}...`);
+    let transactionHash;
+    let blockNumber;
+    const gasUsed = '0'; // Gas-free network
 
-    // Since ethers.js has network detection issues, try raw RPC call approach
-    console.log('Attempting direct transaction to gas-free PureChain...');
-    
     try {
-      // First try with ethers.js
       const transaction = await contract.commitResults(
         workflowId,
         stage,
         ipfsHash,
         resultsHash
       );
-      
-      console.log('Transaction submitted:', transaction.hash);
-      
-      // Wait for transaction confirmation
+
       const receipt = await transaction.wait();
-      console.log('Transaction confirmed in block:', receipt.blockNumber);
-      
-      var transactionHash = transaction.hash;
-      var blockNumber = receipt.blockNumber;
-      var gasUsed = '0'; // Gas-free network
-      
+      transactionHash = transaction.hash;
+      blockNumber = receipt.blockNumber;
+
     } catch (ethersError) {
-      console.log('Ethers.js failed, trying raw RPC approach:', ethersError.message);
-      
-      // Fallback: Create transaction data manually
+      // Fallback: raw RPC approach if ethers.js network detection fails
       const contractInterface = new ethers.utils.Interface(WORKFLOW_TRACKER_ABI);
       const txData = contractInterface.encodeFunctionData('commitResults', [
         workflowId,
@@ -115,13 +86,10 @@ export async function POST(request) {
         ipfsHash,
         resultsHash
       ]);
-      
-      // Get nonce via direct RPC call to avoid network detection issues
+
       const nonceResponse = await fetch(PURECHAIN_RPC_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
           method: 'eth_getTransactionCount',
@@ -129,35 +97,27 @@ export async function POST(request) {
           id: 1
         })
       });
-      
+
       const nonceResult = await nonceResponse.json();
       if (nonceResult.error) {
         throw new Error(`Nonce RPC Error: ${nonceResult.error.message}`);
       }
-      
-      const nonce = nonceResult.result;
-      console.log('Retrieved nonce via RPC:', nonce);
-      
-      // Create raw transaction with EIP-155 compliance
+
       const rawTx = {
         to: WORKFLOW_TRACKER_ADDRESS,
         data: txData,
         value: '0x0',
-        chainId: CHAIN_ID, // Required for EIP-155 (replay protection)
-        gasLimit: '0x7530', // 30000 in hex - sufficient for contract call
-        gasPrice: '0x0', // Gas-free network (no cost)
-        nonce: nonce
+        chainId: CHAIN_ID,
+        gasLimit: '0x7530',
+        gasPrice: '0x0',
+        nonce: nonceResult.result
       };
-      
-      // Sign the transaction
+
       const signedTx = await wallet.signTransaction(rawTx);
-      
-      // Send via raw RPC call
+
       const rpcResponse = await fetch(PURECHAIN_RPC_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
           method: 'eth_sendRawTransaction',
@@ -165,21 +125,17 @@ export async function POST(request) {
           id: 1
         })
       });
-      
+
       const rpcResult = await rpcResponse.json();
-      
       if (rpcResult.error) {
         throw new Error(`RPC Error: ${rpcResult.error.message}`);
       }
-      
-      var transactionHash = rpcResult.result;
-      var blockNumber = 'pending';
-      var gasUsed = '0'; // Gas-free network
-      
-      console.log('Raw RPC transaction submitted:', transactionHash);
+
+      transactionHash = rpcResult.result;
+      blockNumber = 'pending';
     }
 
-    // Persist blockchain information to database
+    // Persist blockchain information to Go backend
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
       const updateResponse = await fetch(`${apiUrl}/api/v1/workflows/${workflowId}/blockchain`, {
@@ -193,19 +149,12 @@ export async function POST(request) {
           ipfs_hash: ipfsHash
         })
       });
-      
+
       if (!updateResponse.ok) {
-        console.warn('Failed to persist blockchain info to database:', updateResponse.status);
-        // Don't fail the entire request - blockchain commit was successful
-      } else {
-        console.log('Successfully persisted blockchain info to database');
       }
     } catch (dbError) {
-      console.warn('Error persisting blockchain info to database:', dbError.message);
-      // Don't fail the entire request - blockchain commit was successful
     }
 
-    // Store commit info in response for frontend localStorage storage
     const commitInfo = {
       txHash: transactionHash,
       ipfsHash: ipfsHash,
@@ -213,24 +162,19 @@ export async function POST(request) {
       workflowId: workflowId
     };
 
-    // Save blockchain verification data to persistent storage
+    // Save blockchain verification data to local file storage
     const fs = require('fs').promises;
     const path = require('path');
-    
+
     try {
-      // Use absolute path to root uploads directory
       const rootDir = path.resolve(process.cwd(), '..');
       const uploadsDir = path.join(rootDir, 'uploads', workflowId);
-      
-      console.log('Creating blockchain data directory:', uploadsDir);
-      
-      // Ensure directory exists
+
       const fsSync = require('fs');
       if (!fsSync.existsSync(uploadsDir)) {
         fsSync.mkdirSync(uploadsDir, { recursive: true });
-        console.log('Created uploads directory:', uploadsDir);
       }
-      
+
       const blockchainData = {
         transaction_hash: transactionHash,
         block_number: blockNumber,
@@ -240,51 +184,33 @@ export async function POST(request) {
         timestamp: new Date().toISOString(),
         workflow_id: workflowId,
         stage: stage,
-        verified: false // Will be updated by verify endpoint
+        verified: false
       };
-      
+
       const blockchainPath = path.join(uploadsDir, 'blockchain.json');
       await fs.writeFile(blockchainPath, JSON.stringify(blockchainData, null, 2));
-      console.log('Blockchain data successfully saved to:', blockchainPath);
-      
-      // Verify file was actually created
-      if (fsSync.existsSync(blockchainPath)) {
-        console.log('Blockchain file verified to exist at:', blockchainPath);
-      } else {
-        console.error('ERROR: Blockchain file was not created!');
-      }
-      
     } catch (saveError) {
-      console.error('Failed to save blockchain data:', saveError);
-      console.error('Error details:', saveError.stack);
     }
 
     return NextResponse.json({
       success: true,
-      transactionHash: transactionHash,
-      blockNumber: blockNumber,
-      gasUsed: gasUsed,
-      ipfsHash: ipfsHash,
-      commitInfo: commitInfo,
+      transactionHash,
+      blockNumber,
+      gasUsed,
+      ipfsHash,
+      commitInfo,
       message: 'Results committed to blockchain successfully'
     });
 
   } catch (error) {
-    console.error('=== BLOCKCHAIN COMMIT ERROR ===');
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    console.error('Error code:', error.code);
-    console.error('Full error object:', error);
-    console.error('=== END BLOCKCHAIN COMMIT ERROR ===');
-    
-    // Handle specific blockchain errors
+
     if (error.code === 'NETWORK_ERROR') {
       return NextResponse.json(
         { error: 'Unable to connect to PureChain network. Please check network connectivity.' },
         { status: 503 }
       );
     }
-    
+
     if (error.code === 'INSUFFICIENT_FUNDS') {
       return NextResponse.json(
         { error: 'Insufficient funds for blockchain transaction.' },
@@ -293,7 +219,7 @@ export async function POST(request) {
     }
 
     return NextResponse.json(
-      { error: error.message || 'Failed to commit to blockchain', details: error.stack },
+      { error: 'Failed to commit to blockchain' },
       { status: 500 }
     );
   }

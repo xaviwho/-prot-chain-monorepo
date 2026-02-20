@@ -10,12 +10,10 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Workflow ID is required' }, { status: 400 });
     }
 
-    console.log('Processing REAL virtual screening for workflow:', id);
     
     // Get the uploads directory path (in root directory, not protchain-ui)
     const rootDir = path.resolve(process.cwd(), '..');
     const uploadsDir = path.join(rootDir, 'uploads', id);
-    console.log('DEBUG: uploadsDir:', uploadsDir);
     
     // Check if PDB file exists
     const pdbPath = path.join(uploadsDir, 'input.pdb');
@@ -52,7 +50,6 @@ export async function POST(request, { params }) {
     
     // Use the best binding site (first one, as they're sorted by score)
     const bestBindingSite = bindingSiteData.binding_sites[0];
-    console.log('Using binding site for virtual screening:', bestBindingSite);
     
     // Read PDB content
     const pdbContent = fs.readFileSync(pdbPath, 'utf8');
@@ -63,7 +60,6 @@ export async function POST(request, { params }) {
     const maxCompounds = requestBody.max_compounds || 50;
     
     // Call REAL bioapi virtual screening
-    console.log('Calling REAL bioapi virtual screening...');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
     const bioApiResponse = await fetch(`${apiUrl}/api/v1/screening/virtual-screening`, {
       method: 'POST',
@@ -85,17 +81,14 @@ export async function POST(request, { params }) {
     }
     
     const bioApiResult = await bioApiResponse.json();
-    console.log('REAL bioapi virtual screening result:', bioApiResult);
     
     // Implement polling for long-running virtual screening (compounds take time to dock)
-    console.log('Bioapi started virtual screening, polling for results...');
     let screeningResults = null;
     let attempts = 0;
     const maxAttempts = 30; // Poll for up to 3 minutes (30 * 6 seconds)
     
     while (attempts < maxAttempts && !screeningResults) {
       attempts++;
-      console.log(`Polling attempt ${attempts}/${maxAttempts} for virtual screening results...`);
       
       // Wait 6 seconds between polls
       await new Promise(resolve => setTimeout(resolve, 6000));
@@ -106,11 +99,9 @@ export async function POST(request, { params }) {
           const resultsData = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
           if (resultsData.virtual_screening && resultsData.virtual_screening.status === 'success') {
             screeningResults = resultsData.virtual_screening;
-            console.log('Found REAL virtual screening results:', screeningResults);
             break;
           }
         } catch (error) {
-          console.error('Error reading virtual screening results:', error);
         }
       }
     }
@@ -141,7 +132,6 @@ export async function POST(request, { params }) {
     }
     
   } catch (error) {
-    console.error('Error in virtual screening:', error);
     return NextResponse.json({ 
       error: 'Internal server error during virtual screening',
       details: error.message 

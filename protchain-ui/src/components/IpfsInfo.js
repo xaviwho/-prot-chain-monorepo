@@ -27,7 +27,6 @@ export default function IpfsInfo() {
         setIpfsData(data);
       } catch (err) {
         setError('Failed to load IPFS information');
-        console.error('IPFS fetch error:', err);
       } finally {
         setLoading(false);
       }

@@ -18,7 +18,6 @@ export async function DELETE(request, { params }) {
     try { json = text ? JSON.parse(text) : null; } catch (_) { json = { error: text || 'Invalid JSON' }; }
     return NextResponse.json(json, { status: resp.status });
   } catch (error) {
-    console.error('Proxy DELETE /workflows/:id failed:', error);
     return NextResponse.json({ error: 'Failed to delete workflow' }, { status: 500 });
   }
 }
@@ -35,12 +34,9 @@ export async function GET(request, { params }) {
       const tokenMatch = cookies.match(/token=([^;]+)/);
       if (tokenMatch) {
         auth = `Bearer ${tokenMatch[1]}`;
-        console.log('API Route: Using token from cookies for workflow GET');
       }
     }
 
-    console.log('API Route: Fetching workflow:', url);
-    console.log('API Route: Using auth header:', auth ? 'Bearer token present' : 'No auth token');
 
     const resp = await fetch(url, {
       headers: { authorization: auth },
@@ -52,7 +48,6 @@ export async function GET(request, { params }) {
     try { json = text ? JSON.parse(text) : null; } catch (_) { json = { error: text || 'Invalid JSON' }; }
     return NextResponse.json(json, { status: resp.status });
   } catch (error) {
-    console.error('Proxy GET /workflows/:id failed:', error);
     return NextResponse.json({ error: 'Failed to fetch workflow' }, { status: 500 });
   }
 }

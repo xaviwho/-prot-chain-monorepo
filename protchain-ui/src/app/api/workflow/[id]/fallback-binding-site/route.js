@@ -28,8 +28,6 @@ export async function POST(request, { params }) {
     const pdbPath = getWorkflowFilePath(id, 'processed.pdb');
     const resultsPath = getWorkflowFilePath(id, 'results.json');
     
-    console.log(`Running fallback binding site detection for workflow: ${id}`);
-    console.log(`Using PDB file: ${normalizePath(pdbPath)}`);
     
     // Check if the files exist
     if (!fs.existsSync(pdbPath) || !fs.existsSync(resultsPath)) {
@@ -41,7 +39,6 @@ export async function POST(request, { params }) {
     
     // Read the PDB file
     const pdbContent = fs.readFileSync(pdbPath, 'utf8');
-    console.log(`Read PDB file with ${pdbContent.length} bytes`);
     
     // Read the results file
     const resultsContent = fs.readFileSync(resultsPath, 'utf8');
@@ -81,13 +78,11 @@ export async function POST(request, { params }) {
       }
     });
     
-    console.log(`Parsed ${atoms.length} protein atoms and ${ligandAtoms.length} ligand atoms`);
     
     // If we have ligands, use them to identify binding sites
     let bindingSites = [];
     
     if (ligandAtoms.length > 0) {
-      console.log('Using ligand-based binding site detection');
       
       // Group ligand atoms by residue
       const ligandResidues = {};
@@ -131,7 +126,6 @@ export async function POST(request, { params }) {
         });
       });
     } else {
-      console.log('No ligands found, using geometry-based binding site detection');
       
       // Use a simple geometric approach to find potential binding sites
       // This is a simplified version that looks for concave regions
@@ -180,11 +174,9 @@ export async function POST(request, { params }) {
         }
       });
       
-      console.log(`Identified ${surfaceResidues.length} potential surface residues`);
       
       // Cluster surface residues to find potential binding sites
       const clusters = clusterResidues(surfaceResidues, 15.0);
-      console.log(`Found ${clusters.length} potential binding site clusters`);
       
       // Convert clusters to binding sites
       clusters.forEach((cluster, index) => {
@@ -228,7 +220,6 @@ export async function POST(request, { params }) {
     // Sort binding sites by score (highest first)
     bindingSites.sort((a, b) => b.score - a.score);
     
-    console.log(`Identified ${bindingSites.length} binding sites`);
     
     // Update the results file with binding site information
     if (!resultsData.binding_site_analysis) {
@@ -240,7 +231,6 @@ export async function POST(request, { params }) {
     resultsData.binding_site_analysis.timestamp = new Date().toISOString();
     
     fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
-    console.log(`Updated results file with binding site information`);
     
     // Return the binding sites
     return NextResponse.json({
@@ -250,7 +240,6 @@ export async function POST(request, { params }) {
     });
     
   } catch (error) {
-    console.error('Error in fallback binding site detection:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to run fallback binding site detection' },
       { status: 500 }

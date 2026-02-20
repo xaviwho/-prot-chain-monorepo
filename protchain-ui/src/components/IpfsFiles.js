@@ -15,7 +15,6 @@ export default function IpfsFiles() {
         setFiles(response.data.files || []);
       } catch (err) {
         setError('Failed to load IPFS files');
-        console.error('IPFS files fetch error:', err);
       } finally {
         setLoading(false);
       }

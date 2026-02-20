@@ -21,11 +21,9 @@ export async function GET(request, { params }) {
     const resultsPath = getWorkflowFilePath(id, 'results.json');
     const mappingPath = path.join(workflowDir, 'bioapi-mapping.json');
     
-    console.log(`Checking structure processing status for workflow: ${id}`);
     
     // Check if results.json exists locally as fallback
     if (fs.existsSync(resultsPath)) {
-      console.log('Local results found - processing completed');
       return NextResponse.json({
         status: 'COMPLETED',
         message: 'Structure processing completed'
@@ -39,9 +37,7 @@ export async function GET(request, { params }) {
         const mappingContent = fs.readFileSync(mappingPath, 'utf8');
         const mapping = JSON.parse(mappingContent);
         bioApiWorkflowId = mapping.bioapi_workflow_id;
-        console.log(`Using bioapi workflow ID for status check: ${bioApiWorkflowId}`);
       } catch (error) {
-        console.log('Failed to read bioapi mapping, using frontend ID');
       }
     }
 
@@ -50,7 +46,6 @@ export async function GET(request, { params }) {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
       
       try {
-        console.log('Checking bioapi status:', `${apiUrl}/api/v1/workflows/${bioApiWorkflowId}/status`);
         
         const response = await axios.get(
           `${apiUrl}/api/v1/workflows/${bioApiWorkflowId}/status`,
@@ -59,7 +54,6 @@ export async function GET(request, { params }) {
           }
         );
         
-        console.log('Bioapi status response:', response.data);
         
         return NextResponse.json({
           status: response.data.status || 'PROCESSING',
@@ -67,7 +61,6 @@ export async function GET(request, { params }) {
           results: response.data.results || null
         });
       } catch (bioApiError) {
-        console.error('Failed to check bioapi status:', {
           message: bioApiError.message,
           status: bioApiError.response?.status,
           statusText: bioApiError.response?.statusText,
@@ -79,14 +72,12 @@ export async function GET(request, { params }) {
     }
     
     // Fall back to local file checking if bioapi is unavailable
-    console.log('Falling back to local file status checking');
     
     // Check if input file exists and get its size
     let inputFileSize = 0;
     if (fs.existsSync(inputPdbPath)) {
       const stats = fs.statSync(inputPdbPath);
       inputFileSize = stats.size;
-      console.log(`Input PDB file size: ${inputFileSize} bytes`);
     }
     
     // Check if the processed PDB file exists
@@ -103,7 +94,6 @@ export async function GET(request, { params }) {
       
       try {
         resultsData = JSON.parse(resultsContent);
-        console.log('Successfully parsed results.json');
         
         return NextResponse.json({
           status: 'COMPLETED',
@@ -111,7 +101,6 @@ export async function GET(request, { params }) {
           results: resultsData
         });
       } catch (error) {
-        console.error('Error parsing results file:', error);
         return NextResponse.json({
           status: 'ERROR',
           message: 'Error parsing results file'
@@ -132,7 +121,6 @@ export async function GET(request, { params }) {
           });
         }
       } catch (logError) {
-        console.error('Error reading log file:', logError);
       }
     }
     
@@ -162,7 +150,6 @@ export async function GET(request, { params }) {
     });
     
   } catch (error) {
-    console.error('Error checking structure processing status:', error);
     return NextResponse.json(
       { 
         status: 'ERROR',

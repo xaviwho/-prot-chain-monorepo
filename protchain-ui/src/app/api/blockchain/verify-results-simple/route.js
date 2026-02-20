@@ -11,7 +11,6 @@ export async function POST(request) {
       );
     }
 
-    console.log(`Verifying results for workflow ${workflowId}...`);
 
     // Simple verification - just check if the data exists
     const verificationData = {
@@ -45,16 +44,13 @@ export async function POST(request) {
         existingData.verificationData = verificationData;
         
         fs.writeFileSync(blockchainPath, JSON.stringify(existingData, null, 2));
-        console.log('Verification data saved to:', blockchainPath);
       }
     } catch (saveError) {
-      console.error('Failed to save verification data:', saveError);
     }
 
     return NextResponse.json(verificationData);
 
   } catch (error) {
-    console.error('Verification error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to verify results' },
       { status: 500 }
