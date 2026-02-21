@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 // PureChain configuration from environment
-const PURECHAIN_RPC_URL = process.env.BLOCKCHAIN_RPC || 'https://purechainnode.com:8547';
+const PURECHAIN_RPC_URL = process.env.BLOCKCHAIN_RPC || 'https://purechainnode.com';
 
 export async function POST(request) {
   try {

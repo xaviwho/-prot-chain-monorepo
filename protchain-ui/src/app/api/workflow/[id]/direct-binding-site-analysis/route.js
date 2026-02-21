@@ -81,14 +81,22 @@ export async function POST(request, { params }) {
     // Call REAL bioapi binding site analysis
     let bioApiResponse;
     let bioApiResult;
-    
+
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+
+      // Forward the Authorization header from the incoming request to the Go backend
+      const authHeader = request.headers.get('authorization');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (authHeader) {
+        headers['Authorization'] = authHeader;
+      }
+
       bioApiResponse = await fetch(`${apiUrl}/api/v1/binding/direct-binding-analysis`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           pdb_id: pdbId || "unknown",
           structure_data: pdbContent
@@ -107,56 +115,80 @@ export async function POST(request, { params }) {
     }
     
     
-    // The bioapi returns results directly in the response, not in a file
-    // Check if bioapi result already contains binding sites
-    if (bioApiResult && bioApiResult.data && bioApiResult.data.binding_sites) {
+    // Extract binding sites from the BioAPI response
+    let bindingSites = [];
+    let method = 'real_geometric_cavity_detection';
+
+    if (bioApiResult?.data?.binding_sites) {
+      bindingSites = bioApiResult.data.binding_sites;
+      method = bioApiResult.data.method || method;
+    } else if (bioApiResult?.binding_sites) {
+      bindingSites = bioApiResult.binding_sites;
+      method = bioApiResult.method || method;
+    }
+
+    if (bindingSites.length > 0) {
+      // Save binding site results to results.json so virtual screening can find them
+      const resultsPath = path.join(uploadsDir, 'results.json');
+      let existingResults = {};
+      if (fs.existsSync(resultsPath)) {
+        try {
+          existingResults = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
+        } catch (_) {}
+      }
+
+      existingResults.binding_site_analysis = {
+        binding_sites: bindingSites,
+        method: method,
+        timestamp: new Date().toISOString(),
+        pdb_id: pdbId
+      };
+
+      fs.writeFileSync(resultsPath, JSON.stringify(existingResults, null, 2));
+
       return NextResponse.json({
         status: 'success',
         message: 'REAL binding site analysis completed successfully',
-        binding_sites: bioApiResult.data.binding_sites,
-        method: bioApiResult.data.method || 'real_geometric_cavity_detection',
-        protein_atoms_count: bioApiResult.data.protein_atoms_count,
+        binding_sites: bindingSites,
+        binding_site_analysis: existingResults.binding_site_analysis,
+        method: method,
+        protein_atoms_count: bioApiResult?.data?.protein_atoms_count,
         pdb_id: pdbId,
         pdbId: pdbId
       });
     }
-    
-    // Implement polling for long-running analysis (large proteins take time)
+
+    // Fallback: poll for results file if BioAPI returned async
     const resultsPath = path.join(uploadsDir, 'results.json');
     let bindingSiteResults = null;
     let attempts = 0;
-    const maxAttempts = 20; // Poll for up to 2 minutes (20 * 6 seconds)
-    
+    const maxAttempts = 20;
+
     while (attempts < maxAttempts && !bindingSiteResults) {
       attempts++;
-      
-      // Wait 6 seconds between polls
       await new Promise(resolve => setTimeout(resolve, 6000));
-      
-      // Check if results file exists and has binding site data
+
       if (fs.existsSync(resultsPath)) {
         try {
           const resultsData = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
-          if (resultsData.binding_site_analysis && resultsData.binding_site_analysis.binding_sites) {
+          if (resultsData.binding_site_analysis?.binding_sites?.length > 0) {
             bindingSiteResults = resultsData.binding_site_analysis;
             break;
           }
-        } catch (error) {
-        }
+        } catch (_) {}
       }
     }
-    
-    // Return real binding site analysis results
-    if (bindingSiteResults && bindingSiteResults.binding_sites) {
+
+    if (bindingSiteResults?.binding_sites) {
       return NextResponse.json({
         status: 'success',
         message: 'REAL binding site analysis completed successfully',
         binding_sites: bindingSiteResults.binding_sites,
-        method: bindingSiteResults.method || 'real_geometric_cavity_detection',
-        protein_atoms_count: bindingSiteResults.protein_atoms_count
+        binding_site_analysis: bindingSiteResults,
+        method: bindingSiteResults.method || method
       });
     } else {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Binding site analysis timed out or no results found',
         debug_info: {
           bioapi_response: bioApiResult,

@@ -11,11 +11,13 @@ export async function GET(request, { params }) {
   try {
     // Call the backend API to check if the workflow exists
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const authHeader = request.headers.get('authorization');
+    const headers = { 'Content-Type': 'application/json' };
+    if (authHeader) headers['Authorization'] = authHeader;
+
     const response = await fetch(`${apiUrl}/api/v1/workflows/${id}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     });
 
     if (!response.ok) {

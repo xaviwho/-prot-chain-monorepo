@@ -156,6 +156,12 @@ func main() {
 		binding := protected.Group("/binding")
 		{
 			binding.POST("/direct-binding-analysis", workflowHandler.DirectBindingAnalysis)
+			binding.POST("/ai-druggability-score", workflowHandler.AIDruggabilityScore)
+		}
+
+		literature := protected.Group("/literature")
+		{
+			literature.POST("/search", workflowHandler.LiteratureSearch)
 		}
 
 		// Team management routes

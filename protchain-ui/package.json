@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
     "@ethersproject/providers": "^5.7.2",

@@ -5,136 +5,159 @@ import path from 'path';
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
-    
+
     if (!id) {
       return NextResponse.json({ error: 'Workflow ID is required' }, { status: 400 });
     }
 
-    
     // Get the uploads directory path (in root directory, not protchain-ui)
     const rootDir = path.resolve(process.cwd(), '..');
     const uploadsDir = path.join(rootDir, 'uploads', id);
-    
+
     // Check if PDB file exists
     const pdbPath = path.join(uploadsDir, 'input.pdb');
     if (!fs.existsSync(pdbPath)) {
-      return NextResponse.json({ 
-        error: 'PDB file not found. Please run structure preparation first.' 
+      return NextResponse.json({
+        error: 'PDB file not found. Please run structure preparation first.'
       }, { status: 400 });
     }
-    
+
     // Check if binding site analysis results exist
     const resultsPath = path.join(uploadsDir, 'results.json');
     if (!fs.existsSync(resultsPath)) {
-      return NextResponse.json({ 
-        error: 'Binding site analysis results not found. Please run binding site analysis first.' 
+      return NextResponse.json({
+        error: 'Binding site analysis results not found. Please run binding site analysis first.'
       }, { status: 400 });
     }
-    
+
     // Read binding site analysis results
     let bindingSiteData = null;
     try {
       const resultsData = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
       bindingSiteData = resultsData.binding_site_analysis;
-      
+
       if (!bindingSiteData || !bindingSiteData.binding_sites || bindingSiteData.binding_sites.length === 0) {
-        return NextResponse.json({ 
-          error: 'No binding sites found. Please run binding site analysis first.' 
+        return NextResponse.json({
+          error: 'No binding sites found. Please run binding site analysis first.'
         }, { status: 400 });
       }
     } catch (error) {
-      return NextResponse.json({ 
-        error: 'Failed to read binding site analysis results.' 
+      return NextResponse.json({
+        error: 'Failed to read binding site analysis results.'
       }, { status: 400 });
     }
-    
+
     // Use the best binding site (first one, as they're sorted by score)
     const bestBindingSite = bindingSiteData.binding_sites[0];
-    
+
     // Read PDB content
     const pdbContent = fs.readFileSync(pdbPath, 'utf8');
-    
+
     // Get request parameters
     const requestBody = await request.json();
     const compoundLibrary = requestBody.compound_library || 'fda_approved';
     const maxCompounds = requestBody.max_compounds || 50;
-    
-    // Call REAL bioapi virtual screening
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+
+    // Load custom compounds if user selected 'custom' library
+    let customCompounds = null;
+    if (compoundLibrary === 'custom') {
+      const parsedPath = path.join(uploadsDir, 'parsed_compounds.json');
+      if (!fs.existsSync(parsedPath)) {
+        return NextResponse.json({
+          error: 'Custom compounds not found. Please upload a compound file first.'
+        }, { status: 400 });
+      }
+      try {
+        const parsedData = JSON.parse(fs.readFileSync(parsedPath, 'utf8'));
+        customCompounds = parsedData.compounds;
+        if (!customCompounds || customCompounds.length === 0) {
+          return NextResponse.json({
+            error: 'Custom compound file is empty. Please upload a valid compound file.'
+          }, { status: 400 });
+        }
+      } catch (e) {
+        return NextResponse.json({
+          error: 'Failed to read parsed compounds file.'
+        }, { status: 400 });
+      }
+    }
+
+    // Call BioAPI virtual screening via Go backend
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8082';
+    const authHeader = request.headers.get('authorization');
+    const fetchHeaders = { 'Content-Type': 'application/json' };
+    if (authHeader) fetchHeaders['Authorization'] = authHeader;
+
     const bioApiResponse = await fetch(`${apiUrl}/api/v1/screening/virtual-screening`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: fetchHeaders,
       body: JSON.stringify({
         workflow_id: id,
         binding_site: bestBindingSite,
         pdb_content: pdbContent,
         compound_library: compoundLibrary,
         max_compounds: maxCompounds,
-        wsl_path: `/app/uploads/${id}`
+        custom_compounds: customCompounds,
       })
     });
-    
+
     if (!bioApiResponse.ok) {
-      throw new Error(`BioAPI request failed: ${bioApiResponse.status} ${bioApiResponse.statusText}`);
-    }
-    
-    const bioApiResult = await bioApiResponse.json();
-    
-    // Implement polling for long-running virtual screening (compounds take time to dock)
-    let screeningResults = null;
-    let attempts = 0;
-    const maxAttempts = 30; // Poll for up to 3 minutes (30 * 6 seconds)
-    
-    while (attempts < maxAttempts && !screeningResults) {
-      attempts++;
-      
-      // Wait 6 seconds between polls
-      await new Promise(resolve => setTimeout(resolve, 6000));
-      
-      // Check if results file exists and has virtual screening data
-      if (fs.existsSync(resultsPath)) {
-        try {
-          const resultsData = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
-          if (resultsData.virtual_screening && resultsData.virtual_screening.status === 'success') {
-            screeningResults = resultsData.virtual_screening;
-            break;
-          }
-        } catch (error) {
-        }
-      }
-    }
-    
-    // Return real virtual screening results
-    if (screeningResults && screeningResults.top_compounds) {
+      const errorText = await bioApiResponse.text();
+      console.error('Virtual screening API error:', bioApiResponse.status, errorText);
       return NextResponse.json({
-        status: 'success',
-        message: 'REAL virtual screening completed successfully',
-        method: screeningResults.method || 'autodock_vina_molecular_docking',
-        binding_site_used: screeningResults.binding_site_used,
-        compounds_screened: screeningResults.compounds_screened,
-        hits_found: screeningResults.hits_found,
-        top_compounds: screeningResults.top_compounds,
-        compound_library: compoundLibrary,
-        max_compounds: maxCompounds
-      });
-    } else {
-      return NextResponse.json({ 
-        error: 'Virtual screening timed out or no results found',
-        debug_info: {
-          bioapi_response: bioApiResult,
-          polling_attempts: attempts,
-          results_file_exists: fs.existsSync(resultsPath),
-          uploads_dir: uploadsDir
-        }
+        error: `Virtual screening failed: ${bioApiResponse.status} ${bioApiResponse.statusText}`,
+        details: errorText
+      }, { status: bioApiResponse.status });
+    }
+
+    const bioApiResult = await bioApiResponse.json();
+
+    // Extract screening data from the response
+    // BioAPI returns { success: true, data: { status, top_compounds, ... } }
+    const screeningData = bioApiResult.data || bioApiResult;
+
+    if (!screeningData || !screeningData.top_compounds) {
+      return NextResponse.json({
+        error: 'Virtual screening returned no results',
+        debug_info: bioApiResult
       }, { status: 500 });
     }
-    
+
+    // Save virtual screening results to results.json for future reference
+    try {
+      let existingResults = {};
+      if (fs.existsSync(resultsPath)) {
+        try { existingResults = JSON.parse(fs.readFileSync(resultsPath, 'utf8')); } catch (_) {}
+      }
+      existingResults.virtual_screening = {
+        ...screeningData,
+        timestamp: new Date().toISOString(),
+      };
+      fs.writeFileSync(resultsPath, JSON.stringify(existingResults, null, 2));
+    } catch (saveError) {
+      console.error('Failed to save virtual screening results:', saveError);
+      // Non-fatal — we still return the results
+    }
+
+    // Return virtual screening results
+    return NextResponse.json({
+      status: 'success',
+      message: 'Virtual screening completed successfully',
+      method: screeningData.method || 'physics_based_scoring',
+      binding_site_used: screeningData.binding_site_used,
+      compounds_screened: screeningData.compounds_screened,
+      hits_found: screeningData.hits_found,
+      top_compounds: screeningData.top_compounds,
+      scoring_components: screeningData.scoring_components,
+      compound_library: compoundLibrary,
+      max_compounds: maxCompounds
+    });
+
   } catch (error) {
-    return NextResponse.json({ 
+    console.error('Virtual screening error:', error);
+    return NextResponse.json({
       error: 'Internal server error during virtual screening',
-      details: error.message 
+      details: error.message
     }, { status: 500 });
   }
 }

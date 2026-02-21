@@ -117,11 +117,13 @@ export async function POST(request, { params }) {
     
     // Make the API call
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const authHeader = request.headers.get('authorization');
+    const fetchHeaders = { 'Content-Type': 'application/json' };
+    if (authHeader) fetchHeaders['Authorization'] = authHeader;
+
     const response = await fetch(`${apiUrl}/api/v1/direct-binding-analysis`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: fetchHeaders,
       body: JSON.stringify(requestData),
     });
     

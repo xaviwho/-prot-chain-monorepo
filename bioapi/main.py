@@ -5,10 +5,14 @@ from pydantic import BaseModel
 import uvicorn
 import os
 import tempfile
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from structure_analysis import StructurePreparation
 from binding_analysis import RealBindingSiteDetection
+from druggability_model import get_predictor
+from literature_search import get_searcher
+from virtual_screening import get_screener
+from compound_parser import parse_csv, parse_sdf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -202,6 +206,140 @@ async def upload_structure(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"File upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+
+# --- Compound Parsing ---
+
+@app.post("/api/v1/compounds/parse")
+async def parse_compound_file(file: UploadFile = File(...)):
+    """Parse a CSV or SDF compound file and compute molecular descriptors."""
+    try:
+        filename = (file.filename or "").lower()
+        content = await file.read()
+
+        if filename.endswith(".csv"):
+            result = parse_csv(content.decode("utf-8", errors="replace"))
+        elif filename.endswith(".sdf"):
+            result = parse_sdf(content)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file format. Please upload a .csv or .sdf file.",
+            )
+
+        logger.info(
+            f"Compound parsing completed: {result['count']} compounds, "
+            f"{len(result['warnings'])} warnings"
+        )
+        return AnalysisResponse(success=True, data=result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Compound parsing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Compound parsing failed: {str(e)}")
+
+
+# --- AI Druggability Scoring ---
+
+class AIDruggabilityRequest(BaseModel):
+    binding_sites: List[Dict[str, Any]]
+    pdb_id: Optional[str] = None
+
+@app.post("/api/v1/structure/binding-sites/ai-score")
+async def ai_druggability_score(request: AIDruggabilityRequest):
+    """ML-enhanced druggability scoring for binding sites."""
+    try:
+        if not request.binding_sites:
+            raise HTTPException(status_code=400, detail="binding_sites list is required")
+
+        predictor = get_predictor()
+        predictions = predictor.predict(request.binding_sites)
+
+        logger.info(f"AI druggability scoring completed for {len(request.binding_sites)} sites")
+        return AnalysisResponse(
+            success=True,
+            data={
+                "predictions": predictions,
+                "pdb_id": request.pdb_id,
+                "model": "GradientBoostingRegressor",
+                "feature_count": 8,
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"AI druggability scoring error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI scoring failed: {str(e)}")
+
+
+# --- Literature Search ---
+
+class LiteratureSearchRequest(BaseModel):
+    pdb_id: str
+    protein_name: Optional[str] = None
+
+@app.post("/api/v1/literature/search")
+async def literature_search(request: LiteratureSearchRequest):
+    """Search PubMed, UniProt, and RCSB PDB for protein research context."""
+    try:
+        if not request.pdb_id:
+            raise HTTPException(status_code=400, detail="pdb_id is required")
+
+        searcher = get_searcher()
+        results = searcher.search_all(request.pdb_id, request.protein_name)
+
+        logger.info(
+            f"Literature search completed for {request.pdb_id}: "
+            f"{results.get('total_papers', 0)} papers found"
+        )
+        return AnalysisResponse(success=True, data=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Literature search error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Literature search failed: {str(e)}")
+
+
+# --- Virtual Screening ---
+
+class VirtualScreeningRequest(BaseModel):
+    workflow_id: Optional[str] = None
+    binding_site: Dict[str, Any]
+    pdb_content: Optional[str] = None
+    compound_library: Optional[str] = "fda_approved"
+    max_compounds: Optional[int] = 50
+    custom_compounds: Optional[List[Dict[str, Any]]] = None
+
+@app.post("/api/v1/screening/virtual-screening")
+async def virtual_screening(request: VirtualScreeningRequest):
+    """Run virtual screening against a binding site pocket."""
+    try:
+        if not request.binding_site:
+            raise HTTPException(status_code=400, detail="binding_site is required")
+
+        screener = get_screener()
+        results = screener.screen(
+            binding_site=request.binding_site,
+            pdb_content=request.pdb_content,
+            compound_library=request.compound_library or "fda_approved",
+            max_compounds=request.max_compounds or 50,
+            custom_compounds=request.custom_compounds,
+        )
+
+        logger.info(
+            f"Virtual screening completed: {results['compounds_screened']} screened, "
+            f"{results['hits_found']} hits"
+        )
+        return AnalysisResponse(success=True, data=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Virtual screening error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Virtual screening failed: {str(e)}")
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 
 // PureChain configuration from environment
-const PURECHAIN_RPC_URL = process.env.BLOCKCHAIN_RPC || 'https://purechainnode.com:8547';
+const PURECHAIN_RPC_URL = process.env.BLOCKCHAIN_RPC || 'https://purechainnode.com';
 const CHAIN_ID = 900520900520;
 
 // Contract configuration — no fallbacks, must be set in environment

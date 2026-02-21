@@ -56,11 +56,13 @@ export async function GET(request, { params }) {
     
     // If no local results, try the backend API
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
+    const authHeader = request.headers.get('authorization');
+    const headers = { 'Content-Type': 'application/json' };
+    if (authHeader) headers['Authorization'] = authHeader;
+
     const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/binding-sites`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     });
 
     if (response.ok) {

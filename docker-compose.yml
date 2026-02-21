@@ -29,7 +29,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
       - BIOAPI_URL=http://bioapi:8000
       - IPFS_ENDPOINT=http://ipfs:5001
-      - BLOCKCHAIN_RPC=${BLOCKCHAIN_RPC:-https://purechainnode.com:8547}
+      - BLOCKCHAIN_RPC=${BLOCKCHAIN_RPC:-https://purechainnode.com}
     ports:
       - "8082:8082"
     depends_on:

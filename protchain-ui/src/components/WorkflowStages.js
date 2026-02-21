@@ -14,6 +14,8 @@ import {
   Grid,
   Chip,
   LinearProgress,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import {
   Biotech,
@@ -23,13 +25,15 @@ import {
   TrendingUp,
   CheckCircle,
   PlayArrow,
+  CloudUpload,
 } from '@mui/icons-material';
 
-export default function WorkflowStages({ 
-  workflowId, 
-  currentStage, 
-  onStructureAnalysisComplete, 
-  onBindingSiteAnalysisComplete 
+export default function WorkflowStages({
+  workflowId,
+  currentStage,
+  onStructureAnalysisComplete,
+  onBindingSiteAnalysisComplete,
+  onVirtualScreeningComplete
 }) {
   const [pdbId, setPdbId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,6 +41,14 @@ export default function WorkflowStages({
   const [success, setSuccess] = useState(null);
   const [workflowData, setWorkflowData] = useState(null);
   const [completedStages, setCompletedStages] = useState(new Set());
+
+  // Compound library selection state
+  const [compoundSource, setCompoundSource] = useState('fda_approved');
+  const [compoundFile, setCompoundFile] = useState(null);
+  const [uploadingCompounds, setUploadingCompounds] = useState(false);
+  const [customCompoundsReady, setCustomCompoundsReady] = useState(false);
+  const [compoundCount, setCompoundCount] = useState(0);
+  const [compoundWarnings, setCompoundWarnings] = useState([]);
 
   // Fetch workflow state on component mount and when workflowId changes
   useEffect(() => {
@@ -327,7 +339,7 @@ export default function WorkflowStages({
         method: 'POST',
         headers,
         body: JSON.stringify({
-          compound_library: 'fda_approved',
+          compound_library: compoundSource,
           max_compounds: 50
         }),
       });
@@ -337,9 +349,14 @@ export default function WorkflowStages({
       }
 
       const results = await response.json();
-      
+
       setSuccess(`Virtual screening completed! Found ${results.hits_found || 0} promising compounds.`);
       setCompletedStages(prev => new Set([...prev, 'virtual_screening']));
+
+      // Notify parent with virtual screening results
+      if (onVirtualScreeningComplete) {
+        onVirtualScreeningComplete(results);
+      }
       
       // Refresh workflow state to update progress immediately
       try {
@@ -366,6 +383,43 @@ export default function WorkflowStages({
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCompoundUpload = async () => {
+    if (!compoundFile) return;
+    setUploadingCompounds(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', compoundFile);
+
+      const token = localStorage.getItem('token');
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(`/api/workflow/${workflowId}/upload-compounds`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setCustomCompoundsReady(true);
+        setCompoundCount(data.count);
+        setCompoundWarnings(data.warnings || []);
+        setSuccess(`${data.count} compounds parsed successfully!`);
+      } else {
+        setError(data.error || 'Failed to parse compounds');
+        setCompoundWarnings(data.warnings || []);
+      }
+    } catch (err) {
+      setError(`Compound upload failed: ${err.message}`);
+    } finally {
+      setUploadingCompounds(false);
     }
   };
 
@@ -433,9 +487,117 @@ export default function WorkflowStages({
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {stage.description}
             </Typography>
-            
+
+            {/* Compound library selector for virtual screening */}
+            {stage.id === 'virtual_screening' && isActive && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Compound Library
+                </Typography>
+                <ToggleButtonGroup
+                  value={compoundSource}
+                  exclusive
+                  onChange={(e, val) => {
+                    if (val !== null) {
+                      setCompoundSource(val);
+                      setError(null);
+                    }
+                  }}
+                  size="small"
+                  fullWidth
+                  sx={{ mb: 1.5 }}
+                >
+                  <ToggleButton value="fda_approved" sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+                    FDA Approved (41)
+                  </ToggleButton>
+                  <ToggleButton value="fragments" sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+                    Fragments (15)
+                  </ToggleButton>
+                  <ToggleButton value="custom" sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+                    Custom Upload
+                  </ToggleButton>
+                </ToggleButtonGroup>
+
+                {compoundSource === 'custom' && (
+                  <Box sx={{
+                    p: 1.5,
+                    border: '1px dashed #bbb',
+                    borderRadius: 1,
+                    backgroundColor: '#fafafa',
+                  }}>
+                    {!customCompoundsReady ? (
+                      <>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <Button
+                            variant="outlined"
+                            component="label"
+                            size="small"
+                            startIcon={<CloudUpload />}
+                            disabled={uploadingCompounds}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            {compoundFile ? compoundFile.name : 'Choose CSV / SDF'}
+                            <input
+                              type="file"
+                              hidden
+                              accept=".csv,.sdf"
+                              onChange={(e) => setCompoundFile(e.target.files?.[0] || null)}
+                            />
+                          </Button>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            onClick={handleCompoundUpload}
+                            disabled={!compoundFile || uploadingCompounds}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            {uploadingCompounds ? (
+                              <CircularProgress size={18} sx={{ color: 'white' }} />
+                            ) : (
+                              'Upload & Parse'
+                            )}
+                          </Button>
+                        </Box>
+                        <Typography variant="caption" color="text.secondary">
+                          CSV needs <strong>name</strong> and <strong>smiles</strong> columns. Max 500 compounds.
+                        </Typography>
+                      </>
+                    ) : (
+                      <Box>
+                        <Chip
+                          label={`${compoundCount} custom compounds ready`}
+                          color="success"
+                          size="small"
+                          sx={{ mr: 1 }}
+                        />
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            setCustomCompoundsReady(false);
+                            setCompoundFile(null);
+                            setCompoundCount(0);
+                            setCompoundWarnings([]);
+                          }}
+                          sx={{ textTransform: 'none', fontSize: '0.7rem' }}
+                        >
+                          Change
+                        </Button>
+                        {compoundWarnings.length > 0 && (
+                          <Alert severity="warning" sx={{ mt: 1, py: 0 }}>
+                            <Typography variant="caption">
+                              {compoundWarnings.length} warning{compoundWarnings.length > 1 ? 's' : ''}: {compoundWarnings[0]}
+                              {compoundWarnings.length > 1 && ` (+${compoundWarnings.length - 1} more)`}
+                            </Typography>
+                          </Alert>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </Box>
+            )}
+
             {/* Show blockchain/IPFS verification links for completed stages (stage-specific) */}
-            {console.log(`DEBUG: Stage ${stage.id} - isCompleted:`, isCompleted, 'blockchainByStage:', workflowData?.blockchainByStage, 'stage data:', workflowData?.blockchainByStage?.[stage.id])}
             {isCompleted && (workflowData?.blockchainByStage?.[stage.id] || workflowData?.blockchain) && (
               <Box sx={{ mb: 2 }}>
                 <Typography variant="body2" color="success.main" sx={{ mb: 1, fontWeight: 'bold' }}>
@@ -510,7 +672,7 @@ export default function WorkflowStages({
               <Button
                 variant="contained"
                 onClick={() => handleStageAction(stage.id)}
-                disabled={loading || (stage.id === 'structure_preparation' && !pdbId.trim())}
+                disabled={loading || (stage.id === 'structure_preparation' && !pdbId.trim()) || (stage.id === 'virtual_screening' && compoundSource === 'custom' && !customCompoundsReady)}
                 startIcon={loading ? <CircularProgress size={20} /> : <PlayArrow />}
                 fullWidth
                 sx={{ backgroundColor: stage.color }}
@@ -535,14 +697,31 @@ export default function WorkflowStages({
         <Typography variant="subtitle1" gutterBottom>
           Pipeline Progress
         </Typography>
-        <LinearProgress 
-          variant="determinate" 
-          value={workflowData?.progress?.percentage || 0} 
-          sx={{ height: 8, borderRadius: 4 }}
-        />
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          {workflowData?.progress?.completed || 0} of {workflowData?.progress?.total || 5} stages completed
-        </Typography>
+        {(() => {
+          const total = stages.length;
+          const completed = stages.filter(s => getStageStatus(s.id) === 'completed').length;
+          const percentage = total > 0 ? (completed / total) * 100 : 0;
+          return (
+            <>
+              <LinearProgress
+                variant="determinate"
+                value={percentage}
+                sx={{
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: 'rgba(76, 175, 80, 0.15)',
+                  '& .MuiLinearProgress-bar': {
+                    borderRadius: 4,
+                    backgroundColor: '#4CAF50',
+                  },
+                }}
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {completed} of {total} stages completed
+              </Typography>
+            </>
+          );
+        })()}
       </Paper>
       
       {error && (

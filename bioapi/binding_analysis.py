@@ -171,77 +171,56 @@ class RealBindingSiteDetection:
             return []
     
     def _cluster_cavity_points(self, cavity_points: np.ndarray, protein_coords: np.ndarray, atom_info: List[Dict]) -> List[Dict[str, Any]]:
-        """Cluster cavity points into distinct binding sites"""
+        """Cluster cavity points into distinct binding sites using hierarchical clustering"""
         try:
             if len(cavity_points) == 0:
                 return []
-            
+
+            from scipy.cluster.hierarchy import fcluster, linkage
+
             # For very large cavity point sets, use subsampling
-            if len(cavity_points) > 10000:
-                logger.info(f"Large cavity point set ({len(cavity_points)}), subsampling to 5000 points")
+            if len(cavity_points) > 8000:
+                logger.info(f"Large cavity point set ({len(cavity_points)}), subsampling to 5000")
                 indices = self._rng.choice(len(cavity_points), 5000, replace=False)
                 cavity_points = cavity_points[indices]
-            
-            # Protein size-aware clustering
+
+            # Use hierarchical clustering for proper pocket separation
+            # Distance threshold 6Å: points within this distance belong to same pocket
+            linkage_matrix = linkage(cavity_points, method='average', metric='euclidean')
+            cluster_labels = fcluster(linkage_matrix, t=6.0, criterion='distance')
+
+            unique_labels = np.unique(cluster_labels)
+
+            # Protein size-aware minimum cluster size (larger = stricter filtering)
             num_atoms = len(protein_coords)
-            
-            # Dynamic clustering parameters based on protein size
-            if num_atoms < 1000:  # Small protein
-                cluster_distance = 3.5
-                min_cluster_size = 3
-            elif num_atoms < 3000:  # Medium protein
-                cluster_distance = 4.0
-                min_cluster_size = 5
-            else:  # Large protein
-                cluster_distance = 4.5
+            if num_atoms < 1000:
                 min_cluster_size = 8
-            
+            elif num_atoms < 3000:
+                min_cluster_size = 12
+            else:
+                min_cluster_size = 20
+
             clusters = []
-            used_points = set()
-            
-            for i, point in enumerate(cavity_points):
-                if i in used_points:
-                    continue
-                
-                # Start new cluster
-                cluster_points = [point]
-                cluster_indices = {i}
-                
-                # Find nearby points using single-pass clustering for efficiency
-                distances = np.linalg.norm(cavity_points - point, axis=1)
-                nearby_indices = np.where(distances <= cluster_distance)[0]
-                
-                for idx in nearby_indices:
-                    if idx not in used_points:
-                        cluster_points.append(cavity_points[idx])
-                        cluster_indices.add(idx)
-                        used_points.add(idx)
-                
-                # Use dynamic minimum cluster size
-                if len(cluster_points) >= min_cluster_size:
-                    clusters.append(np.array(cluster_points))
-            
-            logger.info(f"Found {len(clusters)} cavity clusters")
-            
+            for label in unique_labels:
+                mask = cluster_labels == label
+                cluster_pts = cavity_points[mask]
+                if len(cluster_pts) >= min_cluster_size:
+                    clusters.append(cluster_pts)
+
+            logger.info(f"Found {len(clusters)} cavity clusters (from {len(unique_labels)} raw)")
+
             # Convert clusters to binding site descriptions
             binding_sites = []
             for i, cluster in enumerate(clusters):
-                # Use the same dynamic minimum size as clustering
-                if len(cluster) < min_cluster_size:
-                    continue
-                
-                # Calculate cluster properties
                 center = np.mean(cluster, axis=0)
-                volume = len(cluster) * (1.5 ** 3)  # Approximate volume
-                
-                # Find nearby residues
-                nearby_residues = self._find_nearby_residues(center, protein_coords, atom_info)
-                
-                # Calculate binding site properties
+                volume = len(cluster) * (1.5 ** 3)  # Grid-based volume in ų
+
+                nearby_residues = self._find_nearby_residues(center, protein_coords, atom_info, radius=6.0)
                 druggability = self._calculate_druggability_score(cluster, nearby_residues)
                 hydrophobicity = self._calculate_hydrophobicity(nearby_residues)
-                
-                binding_site = {
+                enclosure = self._calculate_enclosure(cluster, protein_coords)
+
+                binding_sites.append({
                     "site_id": i + 1,
                     "center": {
                         "x": float(center[0]),
@@ -253,32 +232,80 @@ class RealBindingSiteDetection:
                     "hydrophobicity": round(hydrophobicity, 3),
                     "nearby_residues": nearby_residues,
                     "cavity_points": len(cluster),
+                    "enclosure_score": round(enclosure, 3),
                     "surface_accessibility": self._calculate_surface_accessibility(center, protein_coords)
-                }
-                
-                binding_sites.append(binding_site)
-            
+                })
+
             # Sort by druggability score (best first)
             binding_sites.sort(key=lambda x: x['druggability_score'], reverse=True)
-            
-            # Dynamic filtering based on actual druggability scores - no artificial limits
-            # Only return sites that meet minimum druggability threshold
-            min_druggability = 0.4  # Reasonable minimum for drug binding
-            
-            # Filter sites that meet the minimum threshold
-            viable_sites = [site for site in binding_sites if site['druggability_score'] >= min_druggability]
-            
-            # If no sites meet the threshold, lower it and try again
+
+            # Filter: require minimum volume (200 ų) and druggability (0.45)
+            viable_sites = [
+                s for s in binding_sites
+                if s['druggability_score'] >= 0.45 and s['volume'] >= 200.0
+            ]
+
+            # Fallback: if no sites pass strict threshold, relax for top sites
             if not viable_sites and binding_sites:
-                min_druggability = 0.25
-                viable_sites = [site for site in binding_sites if site['druggability_score'] >= min_druggability]
-            
-            # Return all viable sites - let the natural cavity detection determine the count
-            return viable_sites
-            
+                viable_sites = [
+                    s for s in binding_sites
+                    if s['druggability_score'] >= 0.30 and s['volume'] >= 100.0
+                ][:5]
+
+            # Merge nearby sites (centers within 8Å) — keep the higher-scoring one
+            merged = []
+            used = set()
+            for i, a in enumerate(viable_sites):
+                if i in used:
+                    continue
+                best = a
+                for j, b in enumerate(viable_sites):
+                    if j <= i or j in used:
+                        continue
+                    ca = np.array([a['center']['x'], a['center']['y'], a['center']['z']])
+                    cb = np.array([b['center']['x'], b['center']['y'], b['center']['z']])
+                    if np.linalg.norm(ca - cb) < 8.0:
+                        used.add(j)
+                        if b['druggability_score'] > best['druggability_score']:
+                            best['volume'] += b['volume'] if best == a else a['volume']
+                            best = b
+                        else:
+                            best['volume'] += b['volume']
+                merged.append(best)
+
+            # Re-number
+            for idx, site in enumerate(merged):
+                site['site_id'] = idx + 1
+
+            logger.info(f"Final binding sites after filtering/merging: {len(merged)}")
+            return merged
+
         except Exception as e:
             logger.error(f"Clustering error: {str(e)}")
             return []
+
+    def _calculate_enclosure(self, cluster_points: np.ndarray, protein_coords: np.ndarray) -> float:
+        """Calculate how enclosed a pocket is (higher = more enclosed = better drug target)"""
+        try:
+            center = np.mean(cluster_points, axis=0)
+            directions = np.array([
+                [1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1],
+                [1,1,0], [-1,1,0], [1,-1,0], [-1,-1,0], [0,1,1], [0,-1,-1]
+            ], dtype=float)
+            directions = directions / np.linalg.norm(directions, axis=1, keepdims=True)
+
+            enclosed_count = 0
+            for d in directions:
+                relative = protein_coords - center
+                proj = np.dot(relative, d)
+                lateral = np.linalg.norm(relative - proj[:, np.newaxis] * d, axis=1)
+                in_cone = (proj > 0) & (proj < 12.0) & (lateral < 5.0)
+                if np.any(in_cone):
+                    enclosed_count += 1
+
+            return enclosed_count / len(directions)
+        except Exception:
+            return 0.5
     
     def _find_nearby_residues(self, center: np.ndarray, protein_coords: np.ndarray, atom_info: List[Dict], radius: float = 6.0) -> List[Dict[str, Any]]:
         """Find residues near the binding site center"""

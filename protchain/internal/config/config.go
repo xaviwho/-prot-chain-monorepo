@@ -56,7 +56,7 @@ func Load() *Config {
 		},
 		BioapiURL:     getEnv("BIOAPI_URL", "http://localhost:8000"),
 		IPFSEndpoint:  getEnv("IPFS_ENDPOINT", "http://localhost:5001"),
-		BlockchainRPC: getEnv("BLOCKCHAIN_RPC", "https://purechainnode.com:8547"),
+		BlockchainRPC: getEnv("BLOCKCHAIN_RPC", "https://purechainnode.com"),
 
 		DBMaxOpenConns:       getEnvInt("DB_MAX_OPEN_CONNS", 25),
 		DBMaxIdleConns:       getEnvInt("DB_MAX_IDLE_CONNS", 5),

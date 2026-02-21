@@ -844,65 +844,162 @@ func (h *WorkflowHandler) GetWorkflowTemplates(c *gin.Context) {
 	})
 }
 
-// VirtualScreening performs virtual screening for drug discovery
+// VirtualScreening proxies virtual screening requests to BioAPI
 func (h *WorkflowHandler) VirtualScreening(c *gin.Context) {
-	var req struct {
-		WorkflowID       string `json:"workflow_id"`
-		BindingSite      interface{} `json:"binding_site"`
-		PDBContent       string `json:"pdb_content"`
-		CompoundLibrary  string `json:"compound_library"`
-		MaxCompounds     int    `json:"max_compounds"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Success: false,
-			Error:   "Invalid request format",
-		})
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Success: false, Error: "Failed to read request body"})
 		return
 	}
 
-	// Validate required fields
-	if req.WorkflowID == "" || req.PDBContent == "" {
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/screening/virtual-screening", bioapiURL)
+	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("BioAPI virtual screening request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
-			Error:   "Missing required fields: workflow_id and pdb_content are required",
+			Error:   "Failed to connect to virtual screening service: " + err.Error(),
 		})
 		return
 	}
+	defer resp.Body.Close()
 
-	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
-		Success: false,
-		Error:   "Virtual screening service not implemented. Please configure molecular docking and compound screening pipeline.",
-	})
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to read virtual screening response"})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse virtual screening response"})
+		return
+	}
+
+	c.JSON(resp.StatusCode, result)
 }
 
-// DirectBindingAnalysis performs direct binding site analysis
+// AIDruggabilityScore proxies ML druggability scoring to BioAPI
+func (h *WorkflowHandler) AIDruggabilityScore(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Success: false, Error: "Failed to read request body"})
+		return
+	}
+
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/structure/binding-sites/ai-score", bioapiURL)
+	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("BioAPI AI scoring request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to connect to AI scoring service: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to read AI scoring response"})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse AI scoring response"})
+		return
+	}
+
+	c.JSON(resp.StatusCode, result)
+}
+
+// LiteratureSearch proxies literature search requests to BioAPI
+func (h *WorkflowHandler) LiteratureSearch(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Success: false, Error: "Failed to read request body"})
+		return
+	}
+
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/literature/search", bioapiURL)
+	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("BioAPI literature search request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to connect to literature search service: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to read literature search response"})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse literature search response"})
+		return
+	}
+
+	c.JSON(resp.StatusCode, result)
+}
+
+// DirectBindingAnalysis proxies binding site analysis requests to BioAPI
 func (h *WorkflowHandler) DirectBindingAnalysis(c *gin.Context) {
-	var req struct {
-		PDBID         string `json:"pdb_id"`
-		StructureData string `json:"structure_data"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Success: false,
-			Error:   "Invalid request format",
-		})
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Success: false, Error: "Failed to read request body"})
 		return
 	}
 
-	// Validate required fields
-	if req.StructureData == "" {
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/binding/direct-binding-analysis", bioapiURL)
+	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("BioAPI binding analysis request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Success: false,
-			Error:   "Missing required field: structure_data is required",
+			Error:   "Failed to connect to binding analysis service: " + err.Error(),
 		})
 		return
 	}
+	defer resp.Body.Close()
 
-	c.JSON(http.StatusNotImplemented, dto.ErrorResponse{
-		Success: false,
-		Error:   "Direct binding analysis service not implemented. Please configure geometric cavity detection and druggability analysis pipeline.",
-	})
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to read binding analysis response"})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse binding analysis response"})
+		return
+	}
+
+	c.JSON(resp.StatusCode, result)
 }

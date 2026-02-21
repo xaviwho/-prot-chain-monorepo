@@ -47,10 +47,15 @@ export async function GET(request, { params }) {
       
       try {
         
+        const authHeader = request.headers.get('authorization');
+        const axiosHeaders = {};
+        if (authHeader) axiosHeaders['Authorization'] = authHeader;
+
         const response = await axios.get(
           `${apiUrl}/api/v1/workflows/${bioApiWorkflowId}/status`,
           {
-            timeout: 5000
+            timeout: 5000,
+            headers: axiosHeaders
           }
         );
         

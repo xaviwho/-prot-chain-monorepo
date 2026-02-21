@@ -18,7 +18,13 @@
       "Bash(bash start-docker.sh:*)",
       "Bash(curl:*)",
       "Bash(npm install:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nProduction hardening: Phases 1-4 complete\n\nPhase 1 - Fix What''s Broken:\n- Fix DB connection pool \\(max open/idle conns, lifetime\\)\n- Add HTTP server timeouts \\(read/write/idle\\)\n- Add rate limiting middleware\n- Secure JWT auth middleware \\(proper claims validation\\)\n- Fix DTO types for API consistency\n- Add healthcheck endpoints\n\nPhase 2 - Production Hardening:\n- Parameterize all env vars in docker-compose \\(no hardcoded secrets\\)\n- Add .env.example with required variables\n- Add healthchecks to all Docker services\n- Add .dockerignore for Go backend\n\nPhase 3 - Science Quality & Frontend Cleanup:\n- Replace print\\(\\) with structured logging in BioAPI\n- Seed RNG for reproducible binding site detection \\(np.random.default_rng\\)\n- Fix broken secondary structure fallback to parse PDB HELIX/SHEET records\n- Standardize quality metrics to null instead of \"unknown\" strings\n- Remove unused Python deps \\(rdkit, aiofiles\\)\n- Fix CORS whitespace handling\n- Remove 100+ console.log statements from frontend\n- Add React ErrorBoundary for crash recovery\n- Fix Go error handling \\(cascading DELETEs, type assertions, RowsAffected\\)\n- Add parseIDParam helper for input validation\n\nPhase 4 - Cleanup, Security & Deployment:\n- Strip 369 remaining console.log statements from 49 API routes\n- Remove 7 unused npm deps \\(ngl, three, web3, papaparse, cuid, web3-react\\)\n- Remove jQuery CDN script from layout\n- Delete insecure file-based auth routes \\(login, register, reset\\)\n- Fix frontend Dockerfile with proper multi-stage Next.js standalone build\n- Replace hardcoded secrets in deployment compose with env vars\n- Fix Go Dockerfile port \\(8080 -> 8082\\)\n- Define role/status constants, replace all hardcoded strings\n- Replace projects page mock data with Coming Soon placeholder\n- Remove bioapi unnecessary db dependency\n\n110 files changed, ~3000 insertions, ~8000 deletions \\(net cleanup\\)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git status:*)",
+      "Bash(docker compose up:*)",
+      "Bash(docker compose port:*)",
+      "Bash(ss:*)"
     ]
   }
 }

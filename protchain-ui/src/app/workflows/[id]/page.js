@@ -24,9 +24,14 @@ import {
   Biotech,
   Timeline,
   Assessment,
+  SmartToy,
+  MenuBook,
 } from '@mui/icons-material';
+import { Fab } from '@mui/material';
 import WorkflowStages from '@/components/WorkflowStages';
 import WorkflowResults from '@/components/WorkflowResults';
+import AIChatPanel from '@/components/AIChatPanel';
+import ResearchContext from '@/components/ResearchContext';
 
 function TabPanel({ children, value, index }) {
   return (
@@ -44,6 +49,7 @@ export default function WorkflowDetailPage() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
   const [proteinInfo, setProteinInfo] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
   const params = useParams();
   const router = useRouter();
 
@@ -160,6 +166,16 @@ export default function WorkflowDetailPage() {
   const handleBindingSiteAnalysisComplete = (analysisResults) => {
     setResults(analysisResults);
     setStage('binding_site_analysis');
+    setActiveTab(1); // Switch to results tab
+  };
+
+  const handleVirtualScreeningComplete = (screeningResults) => {
+    // Merge virtual screening results into existing results
+    setResults(prev => ({
+      ...prev,
+      virtual_screening: screeningResults
+    }));
+    setStage('virtual_screening');
     setActiveTab(1); // Switch to results tab
   };
 
@@ -286,9 +302,14 @@ export default function WorkflowDetailPage() {
             label="Pipeline" 
             iconPosition="start"
           />
-          <Tab 
-            icon={<Assessment />} 
-            label="Results & Analysis" 
+          <Tab
+            icon={<Assessment />}
+            label="Results & Analysis"
+            iconPosition="start"
+          />
+          <Tab
+            icon={<MenuBook />}
+            label="Research Context"
             iconPosition="start"
           />
         </Tabs>
@@ -299,6 +320,7 @@ export default function WorkflowDetailPage() {
             currentStage={stage}
             onStructureAnalysisComplete={handleStructureAnalysisComplete}
             onBindingSiteAnalysisComplete={handleBindingSiteAnalysisComplete}
+            onVirtualScreeningComplete={handleVirtualScreeningComplete}
           />
         </TabPanel>
         
@@ -322,7 +344,45 @@ export default function WorkflowDetailPage() {
             </Box>
           )}
         </TabPanel>
+
+        <TabPanel value={activeTab} index={2}>
+          <Box sx={{ p: 3 }}>
+            <ResearchContext
+              pdbId={proteinInfo?.pdbId !== 'Unknown' ? proteinInfo?.pdbId : null}
+              proteinName={proteinInfo?.name !== 'Unknown Protein' ? proteinInfo?.name : null}
+            />
+          </Box>
+        </TabPanel>
       </Paper>
+
+      {/* AI Chat FAB */}
+      <Fab
+        color="primary"
+        aria-label="AI Assistant"
+        onClick={() => setChatOpen(true)}
+        sx={{
+          position: 'fixed',
+          bottom: 24,
+          right: 24,
+          background: 'linear-gradient(135deg, #1a237e 0%, #4a148c 100%)',
+          '&:hover': {
+            background: 'linear-gradient(135deg, #0d47a1 0%, #6a1b9a 100%)',
+          },
+          zIndex: 1000,
+        }}
+      >
+        <SmartToy />
+      </Fab>
+
+      {/* AI Chat Panel */}
+      <AIChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        workflowId={params.id}
+        workflowResults={results}
+        stage={stage}
+        workflow={workflow}
+      />
     </Container>
   );
 }

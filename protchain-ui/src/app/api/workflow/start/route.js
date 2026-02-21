@@ -13,13 +13,14 @@ export async function POST(request) {
     }
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
-    
+    const authHeader = request.headers.get('authorization');
+    const headers = { 'Content-Type': 'application/json' };
+    if (authHeader) headers['Authorization'] = authHeader;
+
     // Call the bioapi endpoint
     const res = await fetch(`${apiUrl}/api/v1/workflows`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

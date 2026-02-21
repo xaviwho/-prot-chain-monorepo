@@ -1,385 +1,305 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Box, Typography, Button, Slider, FormControl, InputLabel, Select, MenuItem, Paper, Grid, CircularProgress } from '@mui/material';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Box, Typography, Button, Slider, FormControl, InputLabel, Select, MenuItem, Paper, Grid, CircularProgress, Chip, Tooltip } from '@mui/material';
 
-const BindingSiteVisualizer = ({ bindingSites = [], pdbId = '1AMC', selectedPocketId = null, onPocketSelect = null }) => {
+/**
+ * BindingSiteVisualizer — renders actual pocket-lining residues on the 3D protein
+ * using 3Dmol.js.  Each binding site is shown as:
+ *   1. Stick representation of pocket-lining residues (coloured per-pocket)
+ *   2. Translucent surface over those residues
+ *   3. Small sphere at the geometric center of the pocket
+ */
+const BindingSiteVisualizer = ({ bindingSites = [], pdbId, workflowId, selectedPocketId = null, onPocketSelect = null }) => {
   const viewerRef = useRef(null);
-  const [viewer, setViewer] = useState(null);
-  const [uniqueSites, setUniqueSites] = useState(new Set());
-  const [sphereSize, setSphereSize] = useState(1.0);
-  const [opacity, setOpacity] = useState(0.8);
-  const [colorScheme, setColorScheme] = useState('rainbow');
-  const [isLoading, setIsLoading] = useState(false);
+  const viewerInstanceRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
+  const [surfaceOpacity, setSurfaceOpacity] = useState(0.35);
+  const [showAllPockets, setShowAllPockets] = useState(true);
+  const pdbDataRef = useRef(null);
 
-  // Color schemes
-  const colorSchemes = {
-    rainbow: (index, total) => {
-      const hue = (index / total) * 360;
-      return `hsl(${hue}, 70%, 60%)`;
-    },
-    spectrum: (index, total) => {
-      const colors = ['#ff0000', '#ff8000', '#ffff00', '#80ff00', '#00ff00', 
-                    '#00ff80', '#00ffff', '#0080ff', '#0000ff', '#8000ff'];
-      return colors[index % colors.length];
-    },
-    viridis: (index, total) => {
-      const colors = ['#440154', '#3b528b', '#21908c', '#5dc863', '#fde725'];
-      return colors[index % colors.length];
-    },
-    random: () => {
-      return `#${Math.floor(Math.random()*16777215).toString(16)}`;
+  // Pocket colour palette (distinguishable colours)
+  const POCKET_COLORS = [
+    '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+    '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
+    '#469990', '#dcbeff', '#9A6324', '#800000', '#aaffc3',
+  ];
+
+  const getPocketColor = (index) => POCKET_COLORS[index % POCKET_COLORS.length];
+  const hexToInt = (hex) => parseInt(hex.replace('#', ''), 16);
+
+  // ---- Load 3Dmol.js ----
+  useEffect(() => {
+    if (window.$3Dmol) return;
+    const script = document.createElement('script');
+    script.src = 'https://3dmol.csb.pitt.edu/build/3Dmol-min.js';
+    script.async = true;
+    script.onerror = () => setLoadError('Failed to load 3Dmol.js library');
+    document.head.appendChild(script);
+  }, []);
+
+  // ---- Build the viewer once 3Dmol + DOM are ready ----
+  useEffect(() => {
+    if (!viewerRef.current) return;
+    const tryInit = () => {
+      if (!window.$3Dmol) { setTimeout(tryInit, 200); return; }
+      initViewer();
+    };
+    tryInit();
+    return () => { viewerInstanceRef.current = null; };
+  }, [pdbId, workflowId]);
+
+  const initViewer = async () => {
+    if (!viewerRef.current || !window.$3Dmol) return;
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      const v = window.$3Dmol.createViewer(viewerRef.current, {
+        backgroundColor: 'white',
+        antialias: true,
+      });
+      viewerInstanceRef.current = v;
+
+      // Fetch PDB data — prefer local processed structure, fallback to RCSB
+      let pdbData = null;
+      // Try local processed structure first (uses the workflowId from parent)
+      const wfId = workflowId || (typeof window !== 'undefined' && window.location.pathname.match(/workflows\/([^/]+)/)?.[1]);
+      if (wfId) {
+        try {
+          const res = await fetch(`/api/workflow/${wfId}/processed-structure`);
+          if (res.ok) pdbData = await res.text();
+        } catch (_) {}
+      }
+      if (!pdbData && pdbId && pdbId !== 'unknown' && pdbId !== '1AMC') {
+        try {
+          const res = await fetch(`https://files.rcsb.org/download/${pdbId.toUpperCase()}.pdb`);
+          if (res.ok) pdbData = await res.text();
+        } catch (_) {}
+      }
+      if (!pdbData || !pdbData.includes('ATOM')) {
+        throw new Error('Could not load protein structure');
+      }
+
+      pdbDataRef.current = pdbData;
+      v.addModel(pdbData, 'pdb');
+      v.setStyle({}, { cartoon: { color: 'spectrum', opacity: 0.85 } });
+
+      // Render pockets on structure
+      renderPockets(v, bindingSites, null);
+
+      v.zoomTo();
+      v.render();
+      setIsLoading(false);
+    } catch (err) {
+      setLoadError(err.message);
+      setIsLoading(false);
     }
   };
 
-  // Load 3Dmol.js library
-  useEffect(() => {
-    const load3Dmol = () => {
-      if (window.$3Dmol) {
-        return Promise.resolve();
-      }
+  // ---- Render pocket residues on the structure ----
+  const renderPockets = useCallback((viewer, sites, focusSiteId) => {
+    if (!viewer || !sites || sites.length === 0) return;
 
-      return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/3Dmol/1.8.0/3Dmol-min.js';
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error('Failed to load 3Dmol.js'));
-        document.head.appendChild(script);
+    viewer.removeAllShapes();
+    viewer.removeAllSurfaces();
+
+    // Reset protein to base cartoon
+    viewer.setStyle({}, { cartoon: { color: 'spectrum', opacity: 0.85 } });
+
+    sites.forEach((site, index) => {
+      const siteId = site.site_id || site.id || (index + 1);
+      const isFocused = focusSiteId != null && siteId.toString() === focusSiteId.toString();
+      const shouldShow = showAllPockets || isFocused;
+      if (!shouldShow) return;
+
+      const color = getPocketColor(index);
+      const colorInt = hexToInt(color);
+
+      // Collect residue numbers from nearby_residues
+      const residueIds = [];
+      const residues = site.nearby_residues || site.residues || [];
+      residues.forEach((r) => {
+        const resNum = r.residue_number || r.res_num || r.number;
+        if (resNum != null) residueIds.push(parseInt(resNum));
       });
-    };
 
-    load3Dmol().catch(console.error);
-  }, []);
+      if (residueIds.length > 0) {
+        // Highlight pocket-lining residues as sticks
+        viewer.addStyle(
+          { resi: residueIds },
+          { stick: { color: color, radius: isFocused ? 0.25 : 0.18 } }
+        );
 
-  // Initialize 3Dmol viewer with proper error handling
-  useEffect(() => {
-    if (!window.$3Dmol || viewer) return;
-
-    const initializeViewer = () => {
-      // Check if container exists
-      if (!viewerRef.current) {
-        return;
-      }
-
-      // Check if container is in DOM
-      if (!document.contains(viewerRef.current)) {
-        return;
-      }
-
-      try {
-        const newViewer = window.$3Dmol.createViewer(viewerRef.current, {
-          defaultcolors: window.$3Dmol.rasmolElementColors
-        });
-        
-        if (!newViewer) {
-          return;
+        // Translucent surface over pocket residues
+        try {
+          viewer.addSurface(
+            window.$3Dmol.SurfaceType.VDW,
+            { opacity: isFocused ? surfaceOpacity + 0.15 : surfaceOpacity, color: color },
+            { resi: residueIds }
+          );
+        } catch (_) {
+          // Surface rendering can sometimes fail — degrade gracefully
         }
-
-        newViewer.setBackgroundColor(0x000000);
-        
-        // Load PDB structure
-        const loadStructure = async () => {
-          try {
-            setIsLoading(true);
-            const pdbUrl = `https://files.rcsb.org/download/${pdbId}.pdb`;
-            const response = await fetch(pdbUrl);
-            
-            if (!response.ok) {
-              throw new Error(`Failed to fetch PDB: ${response.status}`);
-            }
-            
-            const pdbData = await response.text();
-            
-            newViewer.addModel(pdbData, 'pdb');
-            newViewer.setStyle({}, {cartoon: {color: 'spectrum'}});
-            newViewer.zoomTo();
-            newViewer.render();
-            setIsLoading(false);
-            
-          } catch (error) {
-            setIsLoading(false);
-          }
-        };
-
-        loadStructure();
-        setViewer(newViewer);
-        
-      } catch (error) {
-        setIsLoading(false);
       }
-    };
 
-    // Use requestAnimationFrame to ensure DOM is ready
-    const rafId = requestAnimationFrame(() => {
-      // Double-check container availability
-      if (viewerRef.current) {
-        initializeViewer();
-      } else {
-        // Fallback with timeout
-        setTimeout(() => {
-          if (viewerRef.current) {
-            initializeViewer();
-          } else {
-          }
-        }, 500);
+      // Small sphere at pocket geometric center
+      if (site.center) {
+        viewer.addSphere({
+          center: { x: site.center.x, y: site.center.y, z: site.center.z },
+          radius: isFocused ? 1.8 : 1.2,
+          color: colorInt,
+          alpha: isFocused ? 0.9 : 0.6,
+        });
       }
     });
 
-    return () => {
-      cancelAnimationFrame(rafId);
-    };
-  }, [pdbId]);
+    viewer.render();
+  }, [showAllPockets, surfaceOpacity]);
 
-  // No need for CSV data conversion - we'll work directly with bindingSites
+  // Re-render when controls change
   useEffect(() => {
-    if (bindingSites && bindingSites.length > 0) {
-      const sites = new Set();
-      bindingSites.forEach((site, index) => {
-        const siteId = site.id || site.pocket_id || (index + 1);
-        sites.add(siteId.toString());
-      });
-      setUniqueSites(sites);
+    if (viewerInstanceRef.current && bindingSites.length > 0) {
+      renderPockets(viewerInstanceRef.current, bindingSites, selectedSite);
     }
-  }, [bindingSites]);
-
-  // Convert color string to 3Dmol color
-  const colorToHex = (colorStr) => {
-    if (colorStr.startsWith('#')) {
-      return parseInt(colorStr.substring(1), 16);
-    } else if (colorStr.startsWith('hsl')) {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = colorStr;
-      return parseInt(ctx.fillStyle.substring(1), 16);
-    }
-    return 0xffffff;
-  };
-
-  // Update visualization with fpocket-style rendering
-  const updateVisualization = () => {
-    updateVisualizationWithSelection(selectedSite);
-  };
-
-  // Generate fewer surface points for cleaner visualization
-  const generateSurfacePoints = (centerX, centerY, centerZ, radius) => {
-    const points = [];
-    const numPoints = 8; // Reduced from 20
-    
-    for (let i = 0; i < numPoints; i++) {
-      const theta = (i / numPoints) * 2 * Math.PI;
-      for (let j = 0; j < 4; j++) { // Reduced from numPoints/2
-        const phi = (j / 4) * Math.PI;
-        
-        const x = centerX + radius * Math.sin(phi) * Math.cos(theta);
-        const y = centerY + radius * Math.sin(phi) * Math.sin(theta);
-        const z = centerZ + radius * Math.cos(phi);
-        
-        points.push({ x, y, z });
-      }
-    }
-    
-    return points;
-  };
-
-  // Handle site click without breaking the viewer
-  const handleSiteClick = (siteId) => {
-    setSelectedSite(siteId);
-    
-    // Notify parent component
-    if (onPocketSelect) {
-      onPocketSelect(siteId);
-    }
-    
-    // Focus on the site
-    focusOnSite(siteId);
-  };
-
-  // Update visualization when controls change
-  useEffect(() => {
-    if (viewer && bindingSites.length > 0) {
-      updateVisualizationWithSelection(selectedSite);
-    }
-  }, [sphereSize, opacity, colorScheme, selectedSite, bindingSites, viewer]);
+  }, [selectedSite, showAllPockets, surfaceOpacity, bindingSites, renderPockets]);
 
   // Handle external pocket selection from table
   useEffect(() => {
-    if (selectedPocketId && viewer && bindingSites && bindingSites.length > 0) {
-      focusOnSite(selectedPocketId.toString());
+    if (selectedPocketId != null) {
+      setSelectedSite(selectedPocketId.toString());
+      if (viewerInstanceRef.current) {
+        renderPockets(viewerInstanceRef.current, bindingSites, selectedPocketId.toString());
+        const site = bindingSites.find(
+          (s, i) => (s.site_id || s.id || i + 1).toString() === selectedPocketId.toString()
+        );
+        if (site?.center) {
+          viewerInstanceRef.current.zoomTo({ x: site.center.x, y: site.center.y, z: site.center.z }, 12);
+          viewerInstanceRef.current.render();
+        }
+      }
     }
-  }, [selectedPocketId, viewer, bindingSites]);
+  }, [selectedPocketId]);
+
+  const handleSiteClick = (siteId) => {
+    const newId = selectedSite === siteId?.toString() ? null : siteId?.toString();
+    setSelectedSite(newId);
+    if (onPocketSelect) onPocketSelect(newId ? parseInt(newId) : null);
+  };
 
   const resetView = () => {
-    if (viewer) {
-      viewer.zoomTo();
-      viewer.render();
+    setSelectedSite(null);
+    if (viewerInstanceRef.current) {
+      viewerInstanceRef.current.zoomTo();
+      viewerInstanceRef.current.render();
     }
+    if (onPocketSelect) onPocketSelect(null);
   };
-
-  const focusOnSite = (siteId) => {
-    if (!viewer || !bindingSites) return;
-    
-    // Find the binding site by ID
-    const site = bindingSites.find(s => 
-      (s.id || s.pocket_id || bindingSites.indexOf(s) + 1).toString() === siteId.toString()
-    );
-    
-    if (site && site.center) {
-      
-      // Highlight the selected binding site by making it more prominent
-      updateVisualizationWithSelection(siteId);
-      
-      // Move camera to focus on the binding site without clearing
-      const center = site.center;
-      
-      // Simply render without moving camera to avoid clearing
-      viewer.render();
-      
-      setSelectedSite(siteId);
-    }
-  };
-
-  // Update visualization with selection highlighting - CLEAN VERSION
-  const updateVisualizationWithSelection = (selectedSiteId) => {
-    if (!viewer || !bindingSites || bindingSites.length === 0) return;
-    
-    
-    // Clear ALL existing shapes but keep the protein structure
-    viewer.removeAllShapes();
-    
-    // Show all binding sites but with smaller spheres for better visibility
-    const sitesToShow = bindingSites;
-    
-    sitesToShow.forEach((site, index) => {
-      const siteId = site.id || site.pocket_id || (index + 1);
-      const colorFunction = colorSchemes[colorScheme];
-      const colorStr = colorFunction(index, sitesToShow.length);
-      const color = colorToHex(colorStr);
-      const isSelected = siteId.toString() === selectedSiteId?.toString();
-      
-      // Show main binding site sphere with size based on volume/druggability and user controls
-      if (site.center) {
-        const { x, y, z } = site.center;
-        // Use much larger base radius and apply user sphere size control
-        const baseRadius = 5.0 * sphereSize; // Apply user sphere size multiplier
-        const volumeScale = site.volume ? Math.min(site.volume / 200, 2.0) : 1.0;
-        const scoreScale = site.druggability_score ? Math.max(site.druggability_score, 0.5) : 1.0;
-        const radius = baseRadius * volumeScale * scoreScale;
-        
-        
-        // Add binding site sphere
-        viewer.addSphere({
-          center: { x, y, z },
-          radius: isSelected ? radius * 1.3 : radius,
-          color: isSelected ? 0xff0000 : color, // Red for selected
-          alpha: isSelected ? 0.9 : (index < 10 ? opacity : opacity * 0.7), // Apply user opacity control
-          clickable: true,
-          callback: () => {
-            handleSiteClick(siteId);
-          }
-        });
-      }
-    });
-    
-    viewer.render();
-  };
-
-  const sitesArray = Array.from(uniqueSites);
-  const colorFunction = colorSchemes[colorScheme];
 
   return (
     <Box>
       {/* Controls */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Visualization Controls
-        </Typography>
-        
-        <Grid container spacing={3}>
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={3}>
-            <Typography gutterBottom>Sphere Size: {sphereSize}</Typography>
+            <Typography variant="body2" gutterBottom>
+              Pocket Surface Opacity: {surfaceOpacity.toFixed(2)}
+            </Typography>
             <Slider
-              value={sphereSize}
-              onChange={(e, value) => setSphereSize(value)}
-              min={0.1}
-              max={3.0}
-              step={0.1}
-              valueLabelDisplay="auto"
+              value={surfaceOpacity}
+              onChange={(_, v) => setSurfaceOpacity(v)}
+              min={0.05}
+              max={0.8}
+              step={0.05}
+              size="small"
             />
           </Grid>
 
           <Grid item xs={12} md={3}>
-            <Typography gutterBottom>Opacity: {opacity}</Typography>
-            <Slider
-              value={opacity}
-              onChange={(e, value) => setOpacity(value)}
-              min={0.1}
-              max={1.0}
-              step={0.1}
-              valueLabelDisplay="auto"
-            />
-          </Grid>
-
-          <Grid item xs={12} md={3}>
-            <FormControl fullWidth>
-              <InputLabel>Color Scheme</InputLabel>
+            <FormControl fullWidth size="small">
+              <InputLabel>Focus Pocket</InputLabel>
               <Select
-                value={colorScheme}
-                onChange={(e) => setColorScheme(e.target.value)}
-                label="Color Scheme"
+                value={selectedSite || ''}
+                onChange={(e) => handleSiteClick(e.target.value || null)}
+                label="Focus Pocket"
               >
-                <MenuItem value="rainbow">Rainbow</MenuItem>
-                <MenuItem value="spectrum">Spectrum</MenuItem>
-                <MenuItem value="viridis">Viridis</MenuItem>
-                <MenuItem value="random">Random</MenuItem>
+                <MenuItem value="">All Pockets</MenuItem>
+                {bindingSites.map((site, i) => {
+                  const siteId = site.site_id || site.id || i + 1;
+                  return (
+                    <MenuItem key={siteId} value={siteId.toString()}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getPocketColor(i) }} />
+                        Pocket {siteId} — Score: {(site.druggability_score || 0).toFixed(2)}, Vol: {(site.volume || 0).toFixed(0)} A
+                      </Box>
+                    </MenuItem>
+                  );
+                })}
               </Select>
             </FormControl>
           </Grid>
 
           <Grid item xs={12} md={3}>
-            <Button
-              variant="contained"
-              onClick={resetView}
-              fullWidth
-              sx={{ height: '56px' }}
-            >
+            <Button variant="contained" onClick={resetView} fullWidth size="small" sx={{ height: 40 }}>
               Reset View
             </Button>
+          </Grid>
+
+          <Grid item xs={12} md={3}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+              {bindingSites.slice(0, 10).map((site, i) => {
+                const siteId = site.site_id || site.id || i + 1;
+                return (
+                  <Tooltip key={i} title={`Pocket ${siteId}: druggability ${(site.druggability_score || 0).toFixed(2)}`}>
+                    <Chip
+                      label={`P${siteId}`}
+                      size="small"
+                      onClick={() => handleSiteClick(siteId)}
+                      sx={{
+                        backgroundColor: getPocketColor(i),
+                        color: '#fff',
+                        fontWeight: 'bold',
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        border: selectedSite === siteId.toString() ? '2px solid #000' : 'none',
+                      }}
+                    />
+                  </Tooltip>
+                );
+              })}
+            </Box>
           </Grid>
         </Grid>
       </Paper>
 
-      {/* Viewer Container */}
-      <Paper sx={{ p: 2, mb: 3 }}>
+      {/* 3D Viewer */}
+      <Paper sx={{ p: 1 }}>
         <Box
           ref={viewerRef}
           sx={{
             width: '100%',
-            height: 500,
-            backgroundColor: '#000',
+            height: 550,
+            backgroundColor: '#fff',
             borderRadius: 1,
-            position: 'relative'
+            position: 'relative',
           }}
-          id="binding-site-viewer-container"
         >
           {isLoading && (
-            <Box
-              sx={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                color: 'white',
-                textAlign: 'center'
-              }}
-            >
-              <CircularProgress sx={{ color: 'white', mb: 2 }} />
-              <Typography>Loading structure...</Typography>
+            <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', zIndex: 10 }}>
+              <CircularProgress sx={{ mb: 1 }} />
+              <Typography variant="body2">Loading protein structure...</Typography>
+            </Box>
+          )}
+          {loadError && (
+            <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', zIndex: 10 }}>
+              <Typography color="error" variant="body2">{loadError}</Typography>
+              <Button size="small" sx={{ mt: 1 }} onClick={initViewer}>Retry</Button>
             </Box>
           )}
         </Box>
       </Paper>
-
     </Box>
   );
 };

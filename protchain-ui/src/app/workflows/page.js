@@ -341,26 +341,53 @@ export default function WorkflowsPage() {
   };
 
   const getStageProgress = (workflow) => {
-    // Calculate REAL progress based on completed stages
-    const completedStages = workflow.completed_stages || [];
-    const totalStages = 5; // structure_preparation, binding_site_analysis, virtual_screening, molecular_dynamics, results_analysis
-    
-    const progress = Math.round((completedStages.length / totalStages) * 100);
-    
-    // Determine current stage based on completed stages
-    if (completedStages.includes('results_analysis')) {
-      return { stage: 'Complete', progress: 100, color: 'success' };
-    } else if (completedStages.includes('molecular_dynamics')) {
-      return { stage: 'Results Analysis', progress: 80, color: 'info' };
-    } else if (completedStages.includes('virtual_screening')) {
-      return { stage: 'Molecular Dynamics', progress: 60, color: 'info' };
-    } else if (completedStages.includes('binding_site_analysis')) {
-      return { stage: 'Virtual Screening', progress: 40, color: 'info' };
-    } else if (completedStages.includes('structure_preparation')) {
-      return { stage: 'Binding Site Analysis', progress: 20, color: 'info' };
-    } else {
-      return { stage: 'Structure Preparation', progress: 0, color: 'default' };
+    // Calculate progress from blockchain commits in localStorage + workflow status
+    const stageOrder = [
+      { id: 'structure_preparation', label: 'Structure Preparation' },
+      { id: 'binding_site_analysis', label: 'Binding Site Analysis' },
+      { id: 'virtual_screening', label: 'Virtual Screening' },
+      { id: 'molecular_dynamics', label: 'Molecular Dynamics' },
+      { id: 'lead_optimization', label: 'Lead Optimization' },
+    ];
+    const totalStages = stageOrder.length;
+
+    // Check blockchain commits from localStorage
+    let recentCommits = {};
+    try {
+      recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
+    } catch (e) { /* ignore */ }
+    const workflowCommits = recentCommits[workflow.id] || {};
+
+    // Also check workflow status from API — certain statuses imply stage completion
+    const status = workflow.status || 'draft';
+    const statusImpliesStructure = ['structure_processed', 'registered', 'completed'].includes(status);
+
+    // Count completed stages
+    let completed = 0;
+    let currentLabel = stageOrder[0].label;
+
+    for (let i = 0; i < stageOrder.length; i++) {
+      const stageId = stageOrder[i].id;
+      const isCommitted = !!workflowCommits[stageId];
+      const isImplied = (stageId === 'structure_preparation' && statusImpliesStructure);
+
+      if (isCommitted || isImplied) {
+        completed++;
+      } else {
+        currentLabel = stageOrder[i].label;
+        break;
+      }
+
+      // If all done
+      if (i === stageOrder.length - 1) {
+        currentLabel = 'Complete';
+      }
     }
+
+    const progress = Math.round((completed / totalStages) * 100);
+    const color = progress === 100 ? 'success' : progress > 0 ? 'info' : 'default';
+
+    return { stage: currentLabel, progress, color };
   };
 
   const renderWorkflowCard = (workflow) => {
@@ -415,10 +442,10 @@ export default function WorkflowsPage() {
                 borderRadius: 3,
                 overflow: 'hidden'
               }}>
-                <Box sx={{ 
-                  width: `${progress.progress}%`, 
-                  height: '100%', 
-                  bgcolor: progress.color === 'success' ? '#4CAF50' : 'grey.400',
+                <Box sx={{
+                  width: `${progress.progress}%`,
+                  height: '100%',
+                  bgcolor: progress.color === 'success' ? '#4CAF50' : progress.color === 'info' ? '#2196F3' : 'grey.400',
                   transition: 'width 0.3s ease'
                 }} />
               </Box>

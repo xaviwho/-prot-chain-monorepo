@@ -9,8 +9,12 @@ export async function GET(request, { params }) {
     // First try the direct API approach
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
     
-    const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/results`);
-    
+    const authHeader = request.headers.get('authorization');
+    const headers = {};
+    if (authHeader) headers['Authorization'] = authHeader;
+
+    const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/results`, { headers });
+
     if (response.ok) {
       const data = await response.json();
       

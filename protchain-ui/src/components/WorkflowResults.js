@@ -26,6 +26,7 @@ import { saveAs } from 'file-saver';
 // Import 3D viewers
 import ProteinViewer3D from './ProteinViewer3D';
 import BindingSiteVisualizer from './BindingSiteVisualizer';
+import SmartDruggabilityCard from './SmartDruggabilityCard';
 // Alias for backward compatibility
 const ProteinViewer = ProteinViewer3D;
 
@@ -951,9 +952,10 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
           
           {/* 3D Viewer Container with Binding Sites */}
           <Box sx={{ mb: 3 }}>
-            <BindingSiteVisualizer 
+            <BindingSiteVisualizer
               bindingSites={bindingSites}
-              pdbId={data?.pdb_id || data?.pdbId || workflow?.pdb_id || workflow?.pdbId || results?.pdbId || results?.pdb_id || '1AMC'}
+              pdbId={data?.pdb_id || data?.pdbId || workflow?.pdb_id || workflow?.pdbId || results?.pdbId || results?.pdb_id}
+              workflowId={params?.id}
               selectedPocketId={selectedPocketId}
               onPocketSelect={setSelectedPocketId}
             />
@@ -1059,6 +1061,12 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             Download Results
           </Button>
         </Box>
+
+        {/* AI-Enhanced Druggability Scoring */}
+        <SmartDruggabilityCard
+          bindingSites={bindingSites}
+          pdbId={data?.pdb_id || data?.pdbId || workflow?.pdb_id || workflow?.pdbId || results?.pdbId || results?.pdb_id}
+        />
 
         {/* Blockchain/IPFS Integration Section */}
         <Paper sx={{ p: 3, mt: 3, borderRadius: 2, backgroundColor: 'rgba(25, 118, 210, 0.02)' }}>
@@ -1223,8 +1231,8 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   );
 
   const renderVirtualScreeningResults = (data) => {
-
-    if (!data || data.status !== 'completed') {
+    // Handle both 'completed' and 'success' status values
+    if (!data || (data.status !== 'completed' && data.status !== 'success')) {
       return (
         <Box>
           <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
@@ -1243,36 +1251,124 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       );
     }
 
+    const compounds = data.top_compounds || [];
+
     return (
       <Box>
         <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
-          Virtual Screening Top Compounds
+          Virtual Screening Results
         </Typography>
+
+        {/* Summary card */}
+        <Paper sx={{ p: 3, mb: 3, borderRadius: 2, background: 'linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%)' }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Compounds Screened</Typography>
+              <Typography variant="h5" fontWeight="bold">{data.compounds_screened || compounds.length}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Hits Found</Typography>
+              <Typography variant="h5" fontWeight="bold" color="success.main">{data.hits_found || 0}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Method</Typography>
+              <Typography variant="body1">{(data.method || 'physics_based_scoring').replace(/_/g, ' ')}</Typography>
+            </Box>
+            {data.binding_site_used && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Pocket Volume</Typography>
+                <Typography variant="body1">{data.binding_site_used.volume?.toFixed(0) || 'N/A'} &#x212B;&sup3;</Typography>
+              </Box>
+            )}
+          </Box>
+        </Paper>
+
+        {/* Top compounds table */}
         <Paper sx={{ p: 3, borderRadius: 2 }}>
+          <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+            Top Ranked Compounds
+          </Typography>
           <TableContainer>
-            <Table>
+            <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Compound ID</TableCell>
-                  <TableCell>Docking Score</TableCell>
-                  <TableCell>SMILES</TableCell>
-                  <TableCell>Actions</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>#</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Compound</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Category</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }} align="right">Score</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }} align="right">Binding Affinity</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }} align="right">MW</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }} align="right">LogP</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }} align="center">Lipinski</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>SMILES</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.top_compounds.map((compound) => (
-                  <TableRow key={compound.id}>
-                    <TableCell>{compound.id}</TableCell>
-                    <TableCell>{compound.score.toFixed(3)}</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{compound.smiles}</TableCell>
+                {compounds.map((compound, idx) => (
+                  <TableRow key={compound.name || compound.id || idx} hover>
+                    <TableCell>{idx + 1}</TableCell>
+                    <TableCell sx={{ fontWeight: 500 }}>{compound.name || compound.id || `Compound ${idx + 1}`}</TableCell>
                     <TableCell>
-                      <Button size="small" variant="outlined">View 3D</Button>
+                      <Box component="span" sx={{
+                        px: 1, py: 0.25, borderRadius: 1, fontSize: '0.75rem',
+                        backgroundColor: 'action.hover',
+                        textTransform: 'capitalize'
+                      }}>
+                        {(compound.category || 'unknown').replace(/_/g, ' ')}
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 'bold', color: compound.score >= 0.7 ? 'success.main' : compound.score >= 0.5 ? 'warning.main' : 'text.secondary' }}>
+                      {compound.score?.toFixed(3) || 'N/A'}
+                    </TableCell>
+                    <TableCell align="right">
+                      {compound.predicted_binding_affinity_kcal ? `${compound.predicted_binding_affinity_kcal} kcal/mol` : 'N/A'}
+                    </TableCell>
+                    <TableCell align="right">{compound.molecular_weight?.toFixed(1) || 'N/A'}</TableCell>
+                    <TableCell align="right">{compound.logP?.toFixed(1) || 'N/A'}</TableCell>
+                    <TableCell align="center">
+                      {compound.lipinski_violations !== undefined ? (
+                        <Box component="span" sx={{
+                          px: 1, py: 0.25, borderRadius: 1, fontSize: '0.75rem',
+                          backgroundColor: compound.lipinski_violations === 0 ? 'success.light' : compound.lipinski_violations === 1 ? 'warning.light' : 'error.light',
+                          color: compound.lipinski_violations === 0 ? 'success.dark' : compound.lipinski_violations === 1 ? 'warning.dark' : 'error.dark',
+                        }}>
+                          {compound.lipinski_violations === 0 ? 'Pass' : `${compound.lipinski_violations} violation${compound.lipinski_violations > 1 ? 's' : ''}`}
+                        </Box>
+                      ) : 'N/A'}
+                    </TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {compound.smiles}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
+
+          {/* Score breakdown for top compound */}
+          {compounds.length > 0 && compounds[0].score_breakdown && (
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Score Breakdown — {compounds[0].name || 'Top Compound'}
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                {Object.entries(compounds[0].score_breakdown).map(([key, value]) => (
+                  <Box key={key} sx={{ minWidth: 140 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>
+                      {key.replace(/_/g, ' ')}
+                    </Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(value * 100, 100)}
+                      sx={{ height: 8, borderRadius: 4, mb: 0.5 }}
+                    />
+                    <Typography variant="body2" fontWeight="bold">{(value * 100).toFixed(0)}%</Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
             <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>
               Download Report
@@ -1327,6 +1423,12 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
     case 'binding_site_analysis':
     case 'completed':
       return renderBindingSites(results);
+    case 'virtual_screening':
+      return results.virtual_screening ? renderVirtualScreeningResults(results.virtual_screening) : renderStageResults();
+    case 'molecular_dynamics':
+      return results.molecular_dynamics ? renderMDResults(results.molecular_dynamics) : renderStageResults();
+    case 'lead_optimization':
+      return results.lead_optimization ? renderOptimizationResults(results.lead_optimization) : renderStageResults();
     default:
       return (
         <Paper sx={{ p: 4, textAlign: 'center', mt: 4 }}>

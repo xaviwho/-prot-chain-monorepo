@@ -13,8 +13,12 @@ export async function GET(request, { params }) {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
     
     try {
-      const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/status`);
-      
+      const authHeader = request.headers.get('authorization');
+      const headers = {};
+      if (authHeader) headers['Authorization'] = authHeader;
+
+      const response = await fetch(`${apiUrl}/api/v1/workflows/${id}/status`, { headers });
+
       if (response.ok) {
         const data = await response.json();
         return NextResponse.json(data);
