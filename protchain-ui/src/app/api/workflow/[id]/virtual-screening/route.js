@@ -57,6 +57,7 @@ export async function POST(request, { params }) {
     const requestBody = await request.json();
     const compoundLibrary = requestBody.compound_library || 'fda_approved';
     const maxCompounds = requestBody.max_compounds || 50;
+    const dockingMethod = requestBody.docking_method || 'physics'; // "physics" or "vina"
 
     // Load custom compounds if user selected 'custom' library
     let customCompounds = null;
@@ -82,13 +83,17 @@ export async function POST(request, { params }) {
       }
     }
 
-    // Call BioAPI virtual screening via Go backend
+    // Call BioAPI via Go backend — route to Vina or physics-based screening
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8082';
     const authHeader = request.headers.get('authorization');
     const fetchHeaders = { 'Content-Type': 'application/json' };
     if (authHeader) fetchHeaders['Authorization'] = authHeader;
 
-    const bioApiResponse = await fetch(`${apiUrl}/api/v1/screening/virtual-screening`, {
+    const screeningEndpoint = dockingMethod === 'vina'
+      ? `${apiUrl}/api/v1/screening/vina-docking`
+      : `${apiUrl}/api/v1/screening/virtual-screening`;
+
+    const bioApiResponse = await fetch(screeningEndpoint, {
       method: 'POST',
       headers: fetchHeaders,
       body: JSON.stringify({
@@ -142,15 +147,22 @@ export async function POST(request, { params }) {
     // Return virtual screening results
     return NextResponse.json({
       status: 'success',
-      message: 'Virtual screening completed successfully',
+      message: dockingMethod === 'vina'
+        ? 'Vina molecular docking completed successfully'
+        : 'Virtual screening completed successfully',
       method: screeningData.method || 'physics_based_scoring',
       binding_site_used: screeningData.binding_site_used,
       compounds_screened: screeningData.compounds_screened,
+      compounds_docked: screeningData.compounds_docked,
       hits_found: screeningData.hits_found,
       top_compounds: screeningData.top_compounds,
       scoring_components: screeningData.scoring_components,
       compound_library: compoundLibrary,
-      max_compounds: maxCompounds
+      max_compounds: maxCompounds,
+      docking_method: dockingMethod,
+      total_docking_time_seconds: screeningData.total_docking_time_seconds,
+      docking_failures: screeningData.docking_failures,
+      exhaustiveness: screeningData.exhaustiveness,
     });
 
   } catch (error) {

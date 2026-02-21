@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libxrender1 \
     libxext6 \
+    swig \
+    libboost-all-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies

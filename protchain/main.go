@@ -151,6 +151,7 @@ func main() {
 		screening := protected.Group("/screening")
 		{
 			screening.POST("/virtual-screening", workflowHandler.VirtualScreening)
+			screening.POST("/vina-docking", workflowHandler.VinaDocking)
 		}
 
 		binding := protected.Group("/binding")

@@ -884,6 +884,46 @@ func (h *WorkflowHandler) VirtualScreening(c *gin.Context) {
 	c.JSON(resp.StatusCode, result)
 }
 
+// VinaDocking proxies real Vina molecular docking requests to BioAPI
+func (h *WorkflowHandler) VinaDocking(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Success: false, Error: "Failed to read request body"})
+		return
+	}
+
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/screening/vina-docking", bioapiURL)
+	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("BioAPI Vina docking request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to connect to Vina docking service: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to read Vina docking response"})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse Vina docking response"})
+		return
+	}
+
+	c.JSON(resp.StatusCode, result)
+}
+
 // AIDruggabilityScore proxies ML druggability scoring to BioAPI
 func (h *WorkflowHandler) AIDruggabilityScore(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)

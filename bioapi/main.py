@@ -13,6 +13,7 @@ from druggability_model import get_predictor
 from literature_search import get_searcher
 from virtual_screening import get_screener
 from compound_parser import parse_csv, parse_sdf
+from molecular_docking import get_docking_engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -339,6 +340,68 @@ async def virtual_screening(request: VirtualScreeningRequest):
     except Exception as e:
         logger.error(f"Virtual screening error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Virtual screening failed: {str(e)}")
+
+
+# --- Vina Molecular Docking ---
+
+class VinaDockingRequest(BaseModel):
+    workflow_id: Optional[str] = None
+    binding_site: Dict[str, Any]
+    pdb_content: str
+    compound_library: Optional[str] = "fda_approved"
+    max_compounds: Optional[int] = 50
+    custom_compounds: Optional[List[Dict[str, Any]]] = None
+
+@app.post("/api/v1/screening/vina-docking")
+async def vina_docking(request: VinaDockingRequest):
+    """Run real molecular docking using AutoDock Vina with parallel batch processing."""
+    try:
+        if not request.binding_site:
+            raise HTTPException(status_code=400, detail="binding_site is required")
+        if not request.pdb_content:
+            raise HTTPException(status_code=400, detail="pdb_content (PDB file content) is required")
+
+        # Build compound list from library or custom compounds
+        if request.custom_compounds:
+            compounds = request.custom_compounds
+        else:
+            from virtual_screening import _get_library
+            library_name = request.compound_library or "fda_approved"
+            library = _get_library(library_name)
+            compounds = [
+                {
+                    "name": c.name,
+                    "smiles": c.smiles,
+                    "molecular_weight": c.molecular_weight,
+                    "logp": c.logp,
+                    "category": c.category,
+                    "hbd": c.hbd,
+                    "hba": c.hba,
+                    "rotatable_bonds": c.rotatable_bonds,
+                    "tpsa": c.tpsa,
+                }
+                for c in library
+            ]
+
+        engine = get_docking_engine()
+        results = engine.dock_batch(
+            pdb_content=request.pdb_content,
+            binding_site=request.binding_site,
+            compounds=compounds,
+            max_compounds=request.max_compounds or 50,
+        )
+
+        logger.info(
+            f"Vina docking completed: {results['compounds_docked']} docked, "
+            f"{results['hits_found']} hits in {results['total_docking_time_seconds']}s"
+        )
+        return AnalysisResponse(success=True, data=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Vina docking error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Vina docking failed: {str(e)}")
 
 
 if __name__ == "__main__":

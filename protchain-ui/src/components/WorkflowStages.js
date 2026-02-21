@@ -48,6 +48,8 @@ export default function WorkflowStages({
   const [uploadingCompounds, setUploadingCompounds] = useState(false);
   const [customCompoundsReady, setCustomCompoundsReady] = useState(false);
   const [compoundCount, setCompoundCount] = useState(0);
+  // Docking method: "physics" (fast scoring) or "vina" (real Vina docking)
+  const [dockingMethod, setDockingMethod] = useState('physics');
   const [compoundWarnings, setCompoundWarnings] = useState([]);
 
   // Fetch workflow state on component mount and when workflowId changes
@@ -340,7 +342,8 @@ export default function WorkflowStages({
         headers,
         body: JSON.stringify({
           compound_library: compoundSource,
-          max_compounds: 50
+          max_compounds: 50,
+          docking_method: dockingMethod,
         }),
       });
 
@@ -488,9 +491,37 @@ export default function WorkflowStages({
               {stage.description}
             </Typography>
 
-            {/* Compound library selector for virtual screening */}
+            {/* Docking method and compound library selector for virtual screening */}
             {stage.id === 'virtual_screening' && isActive && (
               <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Docking Method
+                </Typography>
+                <ToggleButtonGroup
+                  value={dockingMethod}
+                  exclusive
+                  onChange={(e, val) => {
+                    if (val !== null) setDockingMethod(val);
+                  }}
+                  size="small"
+                  fullWidth
+                  sx={{ mb: 2 }}
+                >
+                  <ToggleButton value="physics" sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+                    Fast Scoring
+                  </ToggleButton>
+                  <ToggleButton value="vina" sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+                    Vina Docking
+                  </ToggleButton>
+                </ToggleButtonGroup>
+                {dockingMethod === 'vina' && (
+                  <Alert severity="info" sx={{ mb: 2, py: 0 }}>
+                    <Typography variant="caption">
+                      AutoDock Vina performs real molecular docking with 3D pose prediction. Estimated time: 5-10 min for FDA library.
+                    </Typography>
+                  </Alert>
+                )}
+
                 <Typography variant="subtitle2" sx={{ mb: 1 }}>
                   Compound Library
                 </Typography>

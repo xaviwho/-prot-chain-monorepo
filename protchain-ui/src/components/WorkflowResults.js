@@ -27,6 +27,7 @@ import { saveAs } from 'file-saver';
 import ProteinViewer3D from './ProteinViewer3D';
 import BindingSiteVisualizer from './BindingSiteVisualizer';
 import SmartDruggabilityCard from './SmartDruggabilityCard';
+import DockingPoseViewer from './DockingPoseViewer';
 // Alias for backward compatibility
 const ProteinViewer = ProteinViewer3D;
 
@@ -49,6 +50,7 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   const [verificationResult, setVerificationResult] = useState(blockchainData.verified ? blockchainData.verificationData : null);
   const [currentTab, setCurrentTab] = useState(activeTab);
   const [selectedPocketId, setSelectedPocketId] = useState(null);
+  const [selectedPoseCompound, setSelectedPoseCompound] = useState(null);
   const params = useParams();
   
   // Initialize 3Dmol.js viewer for binding site visualization
@@ -1252,32 +1254,51 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
     }
 
     const compounds = data.top_compounds || [];
+    const isVinaDocking = data.method === 'autodock_vina';
 
     return (
       <Box>
         <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
-          Virtual Screening Results
+          {isVinaDocking ? 'Vina Molecular Docking Results' : 'Virtual Screening Results'}
         </Typography>
 
         {/* Summary card */}
-        <Paper sx={{ p: 3, mb: 3, borderRadius: 2, background: 'linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%)' }}>
+        <Paper sx={{ p: 3, mb: 3, borderRadius: 2, background: isVinaDocking ? 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)' : 'linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%)' }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             <Box>
               <Typography variant="caption" color="text.secondary">Compounds Screened</Typography>
               <Typography variant="h5" fontWeight="bold">{data.compounds_screened || compounds.length}</Typography>
             </Box>
+            {isVinaDocking && data.compounds_docked != null && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Successfully Docked</Typography>
+                <Typography variant="h5" fontWeight="bold">{data.compounds_docked}</Typography>
+              </Box>
+            )}
             <Box>
               <Typography variant="caption" color="text.secondary">Hits Found</Typography>
               <Typography variant="h5" fontWeight="bold" color="success.main">{data.hits_found || 0}</Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Method</Typography>
-              <Typography variant="body1">{(data.method || 'physics_based_scoring').replace(/_/g, ' ')}</Typography>
+              <Typography variant="body1">{isVinaDocking ? 'AutoDock Vina' : (data.method || 'physics_based_scoring').replace(/_/g, ' ')}</Typography>
             </Box>
             {data.binding_site_used && (
               <Box>
                 <Typography variant="caption" color="text.secondary">Pocket Volume</Typography>
                 <Typography variant="body1">{data.binding_site_used.volume?.toFixed(0) || 'N/A'} &#x212B;&sup3;</Typography>
+              </Box>
+            )}
+            {isVinaDocking && data.total_docking_time_seconds != null && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Docking Time</Typography>
+                <Typography variant="body1">{data.total_docking_time_seconds}s</Typography>
+              </Box>
+            )}
+            {isVinaDocking && data.docking_failures > 0 && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Failures</Typography>
+                <Typography variant="body1" color="warning.main">{data.docking_failures}</Typography>
               </Box>
             )}
           </Box>
@@ -1301,6 +1322,9 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                   <TableCell sx={{ fontWeight: 'bold' }} align="right">LogP</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }} align="center">Lipinski</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>SMILES</TableCell>
+                  {isVinaDocking && (
+                    <TableCell sx={{ fontWeight: 'bold' }} align="center">Pose</TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1321,12 +1345,14 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                       {compound.score?.toFixed(3) || 'N/A'}
                     </TableCell>
                     <TableCell align="right">
-                      {compound.predicted_binding_affinity_kcal ? `${compound.predicted_binding_affinity_kcal} kcal/mol` : 'N/A'}
+                      {compound.predicted_binding_affinity_kcal != null
+                        ? `${compound.predicted_binding_affinity_kcal} kcal/mol`
+                        : 'N/A'}
                     </TableCell>
                     <TableCell align="right">{compound.molecular_weight?.toFixed(1) || 'N/A'}</TableCell>
                     <TableCell align="right">{compound.logP?.toFixed(1) || 'N/A'}</TableCell>
                     <TableCell align="center">
-                      {compound.lipinski_violations !== undefined ? (
+                      {compound.lipinski_violations !== undefined && compound.lipinski_violations !== null ? (
                         <Box component="span" sx={{
                           px: 1, py: 0.25, borderRadius: 1, fontSize: '0.75rem',
                           backgroundColor: compound.lipinski_violations === 0 ? 'success.light' : compound.lipinski_violations === 1 ? 'warning.light' : 'error.light',
@@ -1339,14 +1365,30 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
                     <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {compound.smiles}
                     </TableCell>
+                    {isVinaDocking && (
+                      <TableCell align="center">
+                        {compound.has_pose ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => setSelectedPoseCompound(compound)}
+                            sx={{ textTransform: 'none', fontSize: '0.7rem', minWidth: 'auto', px: 1 }}
+                          >
+                            View Pose
+                          </Button>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">N/A</Typography>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
 
-          {/* Score breakdown for top compound */}
-          {compounds.length > 0 && compounds[0].score_breakdown && (
+          {/* Score breakdown for top compound (physics-based only) */}
+          {!isVinaDocking && compounds.length > 0 && compounds[0].score_breakdown && (
             <Box sx={{ mt: 3 }}>
               <Typography variant="subtitle2" gutterBottom>
                 Score Breakdown — {compounds[0].name || 'Top Compound'}
@@ -1369,12 +1411,43 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             </Box>
           )}
 
+          {/* All poses scores for Vina top compound */}
+          {isVinaDocking && compounds.length > 0 && compounds[0].all_poses_scores?.length > 1 && (
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Top Compound Pose Scores — {compounds[0].name}
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {compounds[0].all_poses_scores.map((score, i) => (
+                  <Box key={i} component="span" sx={{
+                    px: 1.5, py: 0.5, borderRadius: 1, fontSize: '0.8rem',
+                    backgroundColor: i === 0 ? 'success.light' : 'action.hover',
+                    color: i === 0 ? 'success.dark' : 'text.primary',
+                    fontWeight: i === 0 ? 'bold' : 'normal',
+                  }}>
+                    Pose {i + 1}: {score} kcal/mol
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
             <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>
               Download Report
             </Button>
           </Box>
         </Paper>
+
+        {/* Docking pose 3D viewer dialog */}
+        {selectedPoseCompound && (
+          <DockingPoseViewer
+            compound={selectedPoseCompound}
+            workflowId={params?.id}
+            pdbId={data?.binding_site_used?.pdb_id || data?.pdb_id}
+            onClose={() => setSelectedPoseCompound(null)}
+          />
+        )}
       </Box>
     );
   };
