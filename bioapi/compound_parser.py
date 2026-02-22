@@ -71,6 +71,13 @@ def compute_descriptors(smiles: str) -> Dict[str, Any]:
     else:
         hydrophobic_fraction = 0.0
 
+    # Lipinski Rule-of-5 violations
+    lipinski = 0
+    if mw > 500: lipinski += 1
+    if logp > 5: lipinski += 1
+    if hbd > 5: lipinski += 1
+    if hba > 10: lipinski += 1
+
     return {
         "molecular_weight": round(mw, 2),
         "logp": round(logp, 2),
@@ -81,6 +88,7 @@ def compute_descriptors(smiles: str) -> Dict[str, Any]:
         "charge": charge,
         "hydrophobic_fraction": hydrophobic_fraction,
         "aromatic_rings": int(aromatic_rings),
+        "lipinski_violations": lipinski,
     }
 
 
@@ -176,6 +184,7 @@ def parse_csv(file_content: str) -> Dict[str, Any]:
             "category": row.get("category", "custom").strip() or "custom",
             "hydrophobic_fraction": _float_or(row.get("hydrophobic_fraction"), desc["hydrophobic_fraction"]),
             "aromatic_rings": _int_or(row.get("aromatic_rings"), desc["aromatic_rings"]),
+            "lipinski_violations": _int_or(row.get("lipinski_violations"), desc["lipinski_violations"]),
         }
         compounds.append(compound)
 

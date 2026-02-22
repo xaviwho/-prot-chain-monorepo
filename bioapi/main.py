@@ -380,6 +380,12 @@ async def vina_docking(request: VinaDockingRequest):
                     "hba": c.hba,
                     "rotatable_bonds": c.rotatable_bonds,
                     "tpsa": c.tpsa,
+                    "lipinski_violations": sum([
+                        1 if c.molecular_weight > 500 else 0,
+                        1 if c.logp > 5 else 0,
+                        1 if c.hbd > 5 else 0,
+                        1 if c.hba > 10 else 0,
+                    ]),
                 }
                 for c in library
             ]

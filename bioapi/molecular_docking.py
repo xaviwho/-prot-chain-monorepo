@@ -450,28 +450,71 @@ class VinaDockingEngine:
 
             total_time = round(time.time() - t_start, 1)
 
+            # Step 6: Deduplicate by SMILES — merge poses from duplicate entries
+            # If the same compound (same SMILES) was docked multiple times,
+            # keep the best score and aggregate all pose scores and SDF data.
+            deduped = {}  # keyed by canonical SMILES
+            for r, comp_data in successful:
+                smi = r["smiles"]
+                if smi in deduped:
+                    existing = deduped[smi]
+                    # Merge pose scores
+                    existing["all_scores"].extend(r["all_scores"])
+                    existing["all_poses_sdf"].append(r["pose_sdf"])
+                    existing["docking_time_seconds"] += r["docking_time_seconds"]
+                    # Keep the better (more negative) score
+                    if r["vina_score"] < existing["vina_score"]:
+                        existing["vina_score"] = r["vina_score"]
+                        existing["pose_sdf"] = r["pose_sdf"]
+                else:
+                    deduped[smi] = {
+                        **r,
+                        "all_poses_sdf": [r["pose_sdf"]] if r["pose_sdf"] else [],
+                        "compound_data": comp_data,
+                    }
+
+            # Sort deduplicated compounds by best Vina score
+            deduped_list = sorted(deduped.values(), key=lambda x: x["vina_score"])
+
             # Build output in frontend-compatible format
             top_compounds = []
-            for rank, (r, comp_data) in enumerate(successful, 1):
+            for rank, entry in enumerate(deduped_list, 1):
+                comp_data = entry["compound_data"]
+                mw = comp_data.get("molecular_weight", 0)
+                logp = comp_data.get("logp", comp_data.get("logP", 0))
+                hbd = comp_data.get("hbd", 0)
+                hba = comp_data.get("hba", 0)
+
+                # Compute Lipinski Rule-of-5 violations from descriptors
+                lipinski = 0
+                if mw and mw > 500: lipinski += 1
+                if logp and logp > 5: lipinski += 1
+                if hbd and hbd > 5: lipinski += 1
+                if hba and hba > 10: lipinski += 1
+
+                # Deduplicate and sort all pose scores
+                all_scores = sorted(set(round(s, 2) for s in entry["all_scores"]))
+
                 top_compounds.append({
-                    "name": r["name"],
-                    "smiles": r["smiles"],
-                    "vina_score_kcal": r["vina_score"],
-                    "predicted_binding_affinity_kcal": r["vina_score"],
-                    "all_poses_scores": r["all_scores"],
-                    "score": self._normalize_vina_score(r["vina_score"]),
-                    "pose_sdf": r["pose_sdf"],
-                    "has_pose": bool(r["pose_sdf"]),
-                    "docking_time_seconds": r["docking_time_seconds"],
+                    "name": entry["name"],
+                    "smiles": entry["smiles"],
+                    "vina_score_kcal": entry["vina_score"],
+                    "predicted_binding_affinity_kcal": entry["vina_score"],
+                    "all_poses_scores": all_scores,
+                    "all_poses_sdf": entry.get("all_poses_sdf", []),
+                    "score": self._normalize_vina_score(entry["vina_score"]),
+                    "pose_sdf": entry["pose_sdf"],
+                    "has_pose": bool(entry["pose_sdf"]),
+                    "docking_time_seconds": entry["docking_time_seconds"],
                     "rank": rank,
-                    "status": r["status"],
-                    # Carry through compound descriptors from input
-                    "molecular_weight": comp_data.get("molecular_weight", 0),
-                    "logP": comp_data.get("logp", comp_data.get("logP", 0)),
+                    "status": entry["status"],
+                    # Compound descriptors
+                    "molecular_weight": mw,
+                    "logP": logp,
                     "category": comp_data.get("category", "unknown"),
-                    "lipinski_violations": comp_data.get("lipinski_violations"),
-                    "hbd": comp_data.get("hbd"),
-                    "hba": comp_data.get("hba"),
+                    "lipinski_violations": lipinski,
+                    "hbd": hbd,
+                    "hba": hba,
                     "rotatable_bonds": comp_data.get("rotatable_bonds"),
                     "tpsa": comp_data.get("tpsa"),
                 })
