@@ -39,7 +39,7 @@ function TabPanel({ children, value, index }) {
   );
 }
 
-function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
+function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onProceedWithoutCommitting = null }) {
   // Initialize blockchain state from persisted workflow data
   const blockchainData = workflow?.blockchain || {};
   const [blockchainCommitted, setBlockchainCommitted] = useState(!!blockchainData.transactionHash);
@@ -283,123 +283,203 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
   };
 
   const handleDownloadResults = () => {
-    if (!results) {
-      return;
-    }
-
+    if (!results) return;
 
     try {
       let csvContent = '';
-      
-      if (stage === 'binding_site_analysis') {
-        // Handle binding site analysis results
+      const esc = (v) => `"${String(v ?? 'N/A').replace(/"/g, '""')}"`;
+      const num = (v, d = 3) => v != null ? Number(v).toFixed(d) : 'N/A';
+
+      if (stage === 'virtual_screening') {
+        // ── Virtual Screening: full compound data ──
+        const vsData = results.virtual_screening || results;
+        const compounds = vsData.top_compounds || [];
+        const isVina = vsData.method === 'autodock_vina';
+
+        if (compounds.length === 0) {
+          alert('No compound data available for export');
+          return;
+        }
+
+        // Metadata block
+        const meta = [
+          `"Workflow ID","${params.id}"`,
+          `"Analysis Stage","Virtual Screening"`,
+          `"Generated On","${new Date().toISOString()}"`,
+          `"Method","${isVina ? 'AutoDock Vina' : (vsData.method || 'physics_based_scoring').replace(/_/g, ' ')}"`,
+          `"Compounds Screened","${vsData.compounds_screened || compounds.length}"`,
+          `"Hits Found","${vsData.hits_found || 0}"`,
+          `"Compound Library","${vsData.compound_library || 'N/A'}"`,
+        ];
+        if (isVina) {
+          meta.push(`"Compounds Docked","${vsData.compounds_docked || 'N/A'}"`);
+          meta.push(`"Docking Time (seconds)","${vsData.total_docking_time_seconds || 'N/A'}"`);
+          meta.push(`"Exhaustiveness","${vsData.exhaustiveness || 'N/A'}"`);
+          meta.push(`"Docking Failures","${vsData.docking_failures || 0}"`);
+        }
+        if (vsData.binding_site_used) {
+          const bs = vsData.binding_site_used;
+          meta.push(`"Binding Site Volume (A3)","${num(bs.volume, 1)}"`);
+          meta.push(`"Binding Site Center","${num(bs.center?.x, 2)}, ${num(bs.center?.y, 2)}, ${num(bs.center?.z, 2)}"`);
+        }
+        meta.push('');
+
+        // CSV header row — all compound fields
+        const header = [
+          'Rank', 'Name', 'SMILES', 'Category', 'Score',
+          'Binding Affinity (kcal/mol)', 'Molecular Weight', 'LogP',
+          'HBD', 'HBA', 'Rotatable Bonds', 'TPSA', 'Charge',
+          'Aromatic Rings', 'Lipinski Violations',
+        ];
+        if (isVina) {
+          header.push('Best Pose (kcal/mol)', 'All Pose Scores');
+        }
+        // Include score breakdown components if present
+        const breakdownKeys = compounds[0]?.score_breakdown ? Object.keys(compounds[0].score_breakdown) : [];
+        breakdownKeys.forEach(k => header.push(`Score: ${k.replace(/_/g, ' ')}`));
+
+        // CSV data rows
+        const rows = compounds.map((c, i) => {
+          const row = [
+            i + 1,
+            esc(c.name || c.id || `Compound ${i + 1}`),
+            esc(c.smiles),
+            esc((c.category || 'unknown').replace(/_/g, ' ')),
+            num(c.score),
+            c.predicted_binding_affinity_kcal != null ? num(c.predicted_binding_affinity_kcal, 2) : 'N/A',
+            num(c.molecular_weight, 2),
+            num(c.logP ?? c.logp, 2),
+            c.hbd ?? 'N/A',
+            c.hba ?? 'N/A',
+            c.rotatable_bonds ?? 'N/A',
+            num(c.tpsa, 2),
+            c.charge ?? 'N/A',
+            c.aromatic_rings ?? 'N/A',
+            c.lipinski_violations ?? 'N/A',
+          ];
+          if (isVina) {
+            row.push(c.predicted_binding_affinity_kcal != null ? num(c.predicted_binding_affinity_kcal, 2) : 'N/A');
+            row.push(c.all_poses_scores ? c.all_poses_scores.join('; ') : 'N/A');
+          }
+          breakdownKeys.forEach(k => row.push(num(c.score_breakdown?.[k])));
+          return row.map(v => typeof v === 'string' && v.startsWith('"') ? v : esc(v)).join(',');
+        });
+
+        csvContent = meta.join('\n') + '\n' + header.map(h => esc(h)).join(',') + '\n' + rows.join('\n');
+
+      } else if (stage === 'binding_site_analysis') {
+        // ── Binding Site Analysis: full site data with residues ──
         const bindingSites = results.binding_sites || results.binding_site_analysis?.binding_sites || [];
-        
+
         if (bindingSites.length === 0) {
           alert('No binding site data available for export');
           return;
         }
-        
-        // Create CSV header for binding sites
-        const csvHeader = 'Site ID,Score,Volume (Å³),Druggability,Hydrophobicity,Center X,Center Y,Center Z,Residue Count\n';
-        
-        // Create CSV rows for each binding site
-        const csvRows = bindingSites.map(site => {
-          const centerId = site.center || {};
-          return [
-            site.id || 'N/A',
-            (site.score || 0).toFixed(3),
-            (site.volume || 0).toFixed(2),
-            (site.druggability || 0).toFixed(3),
-            (site.hydrophobicity || 0).toFixed(3),
-            (centerId.x || 0).toFixed(2),
-            (centerId.y || 0).toFixed(2),
-            (centerId.z || 0).toFixed(2),
-            (site.residues?.length || 0)
-          ].map(val => `"${val}"`).join(',');
-        }).join('\n');
-        
-        // Add metadata header
-        const metadata = [
+
+        const meta = [
           `"Workflow ID","${params.id}"`,
           `"Analysis Stage","Binding Site Analysis"`,
           `"Generated On","${new Date().toISOString()}"`,
           `"Status","${results.status || 'Completed'}"`,
           `"Method","${results.method || results.binding_site_analysis?.method || 'fpocket'}"`,
           `"Total Binding Sites","${bindingSites.length}"`,
-          '',  // Empty line separator
-          '"Binding Site Analysis Results"',
-          csvHeader.trim()
-        ].join('\n');
-        
-        csvContent = metadata + '\n' + csvRows;
-        
+          '',
+        ];
+
+        const header = [
+          'Site ID', 'Score', 'Volume (A3)', 'Druggability', 'Hydrophobicity',
+          'Center X', 'Center Y', 'Center Z',
+          'Residue Count', 'Residues',
+        ];
+
+        const rows = bindingSites.map(site => {
+          const c = site.center || {};
+          const residueList = (site.residues || []).map(r =>
+            r.name ? `${r.name}${r.sequence_number || ''}${r.chain ? ':' + r.chain : ''}` : String(r)
+          ).join('; ');
+          return [
+            esc(site.id || 'N/A'),
+            num(site.score),
+            num(site.volume, 2),
+            num(site.druggability),
+            num(site.hydrophobicity),
+            num(c.x, 2), num(c.y, 2), num(c.z, 2),
+            site.residues?.length || 0,
+            esc(residueList || 'N/A'),
+          ].map(v => typeof v === 'string' && v.startsWith('"') ? v : esc(v)).join(',');
+        });
+
+        csvContent = meta.join('\n') + '\n' + header.map(h => esc(h)).join(',') + '\n' + rows.join('\n');
+
       } else {
-        // Handle structure preparation results - check multiple possible locations
+        // ── Structure Preparation: all descriptors + chain/residue data ──
         let structureData = {};
-        
-        // Try different possible locations for structure data
-        if (results.details?.descriptors) {
-          structureData = results.details.descriptors;
-        } else if (results.STRUCTURE_PREPARATION?.descriptors) {
-          structureData = results.STRUCTURE_PREPARATION.descriptors;
-        } else if (results.structure_preparation?.descriptors) {
-          structureData = results.structure_preparation.descriptors;
-        } else if (results.data?.details?.descriptors) {
-          structureData = results.data.details.descriptors;
-        } else if (results.data?.descriptors) {
-          structureData = results.data.descriptors;
-        } else if (results.descriptors) {
-          structureData = results.descriptors;
-        } else {
-          // If no descriptors found, create basic structure info from available data
-          structureData = {
-            'PDB ID': results.pdbId || results.pdb_id || 'Unknown',
-            'Status': results.status || 'Completed',
-            'Analysis Type': 'Structure Preparation',
-            'Generated On': new Date().toISOString()
-          };
-          
-          // Add any other available data
-          Object.keys(results).forEach(key => {
-            if (!['pdbId', 'pdb_id', 'status'].includes(key) && 
-                typeof results[key] !== 'object' && 
-                results[key] !== null && 
-                results[key] !== undefined) {
-              structureData[key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())] = results[key];
+        const lookups = [
+          results.details?.descriptors,
+          results.STRUCTURE_PREPARATION?.descriptors,
+          results.structure_preparation?.descriptors,
+          results.data?.details?.descriptors,
+          results.data?.descriptors,
+          results.descriptors,
+        ];
+        for (const d of lookups) {
+          if (d && Object.keys(d).length > 0) { structureData = d; break; }
+        }
+
+        // Flatten nested objects
+        const flattenObj = (obj, prefix = '') => {
+          const out = {};
+          for (const [k, v] of Object.entries(obj)) {
+            const key = prefix ? `${prefix} > ${k}` : k;
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+              Object.assign(out, flattenObj(v, key));
+            } else if (Array.isArray(v)) {
+              out[key] = v.join('; ');
+            } else {
+              out[key] = v;
             }
-          });
-        }
-        
-        
+          }
+          return out;
+        };
+
+        // If no descriptors, build from all available top-level data
         if (Object.keys(structureData).length === 0) {
-          alert('No structure data available for export');
-          return;
+          structureData = flattenObj(results);
+        } else {
+          structureData = flattenObj(structureData);
         }
 
-        // Create CSV content for structure data
-        const csvHeader = 'Property,Value\n';
-        const csvRows = Object.entries(structureData).map(([key, value]) => {
-          const propertyName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-          const propertyValue = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : 
-                              (typeof value === 'number' ? value.toFixed(2) : value);
-          return `"${propertyName}","${propertyValue}"`;
-        }).join('\n');
+        // Add key metadata
+        const pdbId = results.pdbId || results.pdb_id || results.details?.pdb_id || 'Unknown';
+        const extraMeta = { 'PDB ID': pdbId, 'Status': results.status || 'Completed' };
 
-        // Add metadata header
-        const metadata = [
+        // Add chain and residue info if present
+        const details = results.details || results.data?.details || {};
+        if (details.chains) extraMeta['Chains'] = Array.isArray(details.chains) ? details.chains.join(', ') : details.chains;
+        if (details.residue_count) extraMeta['Residue Count'] = details.residue_count;
+        if (details.atom_count) extraMeta['Atom Count'] = details.atom_count;
+        if (details.molecular_weight) extraMeta['Molecular Weight (Da)'] = Number(details.molecular_weight).toFixed(1);
+
+        const allData = { ...extraMeta, ...structureData };
+
+        const meta = [
           `"Workflow ID","${params.id}"`,
-          `"Analysis Stage","${stage.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}"`,
+          `"Analysis Stage","Structure Preparation"`,
           `"Generated On","${new Date().toISOString()}"`,
-          `"Status","${results.status || 'Completed'}"`,
-          '',  // Empty line separator
-          '"Structure Analysis Results"',
-          csvHeader.trim()
-        ].join('\n');
+          '',
+        ];
+        const header = ['Property', 'Value'];
+        const rows = Object.entries(allData).map(([key, value]) => {
+          const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          const val = typeof value === 'boolean' ? (value ? 'Yes' : 'No')
+                    : typeof value === 'number' ? value.toFixed(2)
+                    : String(value ?? 'N/A');
+          return `${esc(label)},${esc(val)}`;
+        });
 
-        csvContent = metadata + '\n' + csvRows;
+        csvContent = meta.join('\n') + '\n' + header.map(h => esc(h)).join(',') + '\n' + rows.join('\n');
       }
-      
+
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -410,6 +490,7 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (error) {
+      console.error('Download error:', error);
     }
   };
 
@@ -805,21 +886,39 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
               </Button>
 
               {!blockchainCommitted ? (
-                <Button
-                  variant="contained"
-                  color="success"
-                  onClick={commitToBlockchain}
-                  disabled={commitLoading}
-                  sx={{
-                    background: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)',
-                    color: 'white',
-                    '&:hover': {
-                      background: 'linear-gradient(45deg, #388E3C 30%, #689F38 90%)',
-                    },
-                  }}
-                >
-                  {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
-                </Button>
+                <>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={commitToBlockchain}
+                    disabled={commitLoading}
+                    sx={{
+                      background: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)',
+                      color: 'white',
+                      '&:hover': {
+                        background: 'linear-gradient(45deg, #388E3C 30%, #689F38 90%)',
+                      },
+                    }}
+                  >
+                    {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
+                  </Button>
+                  {onProceedWithoutCommitting && (
+                    <Button
+                      variant="outlined"
+                      onClick={() => onProceedWithoutCommitting(stage, results)}
+                      sx={{
+                        borderColor: '#FF9800',
+                        color: '#FF9800',
+                        '&:hover': {
+                          borderColor: '#F57C00',
+                          backgroundColor: 'rgba(255, 152, 0, 0.08)',
+                        },
+                      }}
+                    >
+                      Proceed Without Committing
+                    </Button>
+                  )}
+                </>
               ) : (
                 <Button
                   variant="contained"
@@ -1079,22 +1178,40 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             Commit your binding site analysis results to blockchain for permanent provenance and integrity verification.
           </Typography>
           
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
             {!blockchainCommitted ? (
-              <Button
-                variant="contained"
-                onClick={commitToBlockchain}
-                disabled={commitLoading}
-                sx={{
-                  background: 'linear-gradient(45deg, #2E7D32 30%, #388E3C 90%)',
-                  color: 'white',
-                  '&:hover': {
-                    background: 'linear-gradient(45deg, #1B5E20 30%, #2E7D32 90%)',
-                  },
-                }}
-              >
-                {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
-              </Button>
+              <>
+                <Button
+                  variant="contained"
+                  onClick={commitToBlockchain}
+                  disabled={commitLoading}
+                  sx={{
+                    background: 'linear-gradient(45deg, #2E7D32 30%, #388E3C 90%)',
+                    color: 'white',
+                    '&:hover': {
+                      background: 'linear-gradient(45deg, #1B5E20 30%, #2E7D32 90%)',
+                    },
+                  }}
+                >
+                  {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
+                </Button>
+                {onProceedWithoutCommitting && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => onProceedWithoutCommitting(stage, results)}
+                    sx={{
+                      borderColor: '#FF9800',
+                      color: '#FF9800',
+                      '&:hover': {
+                        borderColor: '#F57C00',
+                        backgroundColor: 'rgba(255, 152, 0, 0.08)',
+                      },
+                    }}
+                  >
+                    Proceed Without Committing
+                  </Button>
+                )}
+              </>
             ) : (
               <Button
                 variant="contained"
@@ -1411,20 +1528,36 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             </Box>
           )}
 
-          {/* All poses scores for Vina top compound */}
+          {/* All poses scores for Vina top compound — clickable to view pose */}
           {isVinaDocking && compounds.length > 0 && compounds[0].all_poses_scores?.length > 1 && (
             <Box sx={{ mt: 3 }}>
               <Typography variant="subtitle2" gutterBottom>
                 Top Compound Pose Scores — {compounds[0].name}
+                <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>(click to view)</Typography>
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 {compounds[0].all_poses_scores.map((score, i) => (
-                  <Box key={i} component="span" sx={{
-                    px: 1.5, py: 0.5, borderRadius: 1, fontSize: '0.8rem',
-                    backgroundColor: i === 0 ? 'success.light' : 'action.hover',
-                    color: i === 0 ? 'success.dark' : 'text.primary',
-                    fontWeight: i === 0 ? 'bold' : 'normal',
-                  }}>
+                  <Box
+                    key={i}
+                    component="span"
+                    onClick={() => {
+                      if (compounds[0].has_pose) {
+                        setSelectedPoseCompound({ ...compounds[0], selected_pose_index: i });
+                      }
+                    }}
+                    sx={{
+                      px: 1.5, py: 0.5, borderRadius: 1, fontSize: '0.8rem',
+                      backgroundColor: i === 0 ? 'success.light' : 'action.hover',
+                      color: i === 0 ? 'success.dark' : 'text.primary',
+                      fontWeight: i === 0 ? 'bold' : 'normal',
+                      cursor: compounds[0].has_pose ? 'pointer' : 'default',
+                      transition: 'all 0.15s',
+                      '&:hover': compounds[0].has_pose ? {
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        transform: 'translateY(-1px)',
+                      } : {},
+                    }}
+                  >
                     Pose {i + 1}: {score} kcal/mol
                   </Box>
                 ))}
@@ -1432,11 +1565,90 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null }) {
             </Box>
           )}
 
-          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
             <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>
               Download Report
             </Button>
+
+            {!blockchainCommitted ? (
+              <>
+                <Button
+                  variant="contained"
+                  color="success"
+                  onClick={commitToBlockchain}
+                  disabled={commitLoading}
+                  sx={{
+                    background: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)',
+                    color: 'white',
+                    '&:hover': { background: 'linear-gradient(45deg, #388E3C 30%, #689F38 90%)' },
+                  }}
+                >
+                  {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
+                </Button>
+                {onProceedWithoutCommitting && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => onProceedWithoutCommitting(stage, results)}
+                    sx={{
+                      borderColor: '#FF9800',
+                      color: '#FF9800',
+                      '&:hover': { borderColor: '#F57C00', backgroundColor: 'rgba(255, 152, 0, 0.08)' },
+                    }}
+                  >
+                    Proceed Without Committing
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button
+                variant="contained"
+                color="info"
+                onClick={verifyResults}
+                disabled={verifyLoading}
+                sx={{
+                  background: 'linear-gradient(45deg, #00BCD4 30%, #009688 90%)',
+                  color: 'white',
+                  '&:hover': { background: 'linear-gradient(45deg, #0097A7 30%, #00796B 90%)' },
+                }}
+              >
+                {verifyLoading ? <CircularProgress size={24} /> : 'Verify'}
+              </Button>
+            )}
           </Box>
+
+          {/* Blockchain & IPFS records for virtual screening */}
+          {blockchainCommitted && ipfsHash && blockchainTxHash && (
+            <Paper sx={{ p: 2, mt: 2, backgroundColor: 'rgba(46, 125, 50, 0.05)', border: '1px solid rgba(46, 125, 50, 0.2)' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
+                Blockchain & IPFS Records
+              </Typography>
+              <Box sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                <Typography variant="body2">
+                  <strong>IPFS Hash:</strong>{' '}
+                  <a href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>
+                    {ipfsHash}
+                  </a>
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Blockchain Tx:</strong>{' '}
+                  <a href={`https://nsllab-kit.onrender.com/purechain/api/v1/tx/${blockchainTxHash}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>
+                    {blockchainTxHash}
+                  </a>
+                  {' | '}
+                  <a href={`https://nsllab-kit.onrender.com/purechain/api/v1/tx/${blockchainTxHash}/receipt`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>
+                    Receipt
+                  </a>
+                </Typography>
+              </Box>
+              {verificationResult && (
+                <Box sx={{ mt: 1, p: 1, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 1 }}>
+                  <Typography variant="body2" color="success.main">
+                    Verified on block #{verificationResult.blockNumber} at {new Date(verificationResult.timestamp).toLocaleString()}
+                  </Typography>
+                </Box>
+              )}
+            </Paper>
+          )}
         </Paper>
 
         {/* Docking pose 3D viewer dialog */}

@@ -10,54 +10,68 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Workflow ID is required' }, { status: 400 });
     }
 
-    
+    // Parse request body for optional pdb_id
+    let requestBody = {};
+    try {
+      requestBody = await request.json();
+    } catch (_) {}
+
     // Get the uploads directory path (in root directory, not protchain-ui)
     const rootDir = path.resolve(process.cwd(), '..');
     const uploadsDir = path.join(rootDir, 'uploads', id);
-    
+
+    // Ensure uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
     // Check if PDB file exists, if not try to fetch it from the workflow data
     const pdbPath = path.join(uploadsDir, 'input.pdb');
     let pdbContent = null;
-    let pdbId = null;
-    
+    let pdbId = requestBody.pdb_id || requestBody.pdbId || null;
+
     if (!fs.existsSync(pdbPath)) {
       if (fs.existsSync(uploadsDir)) {
         const files = fs.readdirSync(uploadsDir);
       }
-      
-      // Try to get PDB content from blockchain.json or fetch from PDB database
-      const blockchainPath = path.join(uploadsDir, 'blockchain.json');
-      if (fs.existsSync(blockchainPath)) {
+
+      // Try to get PDB ID from pdb-info.json (saved during structure preparation)
+      const pdbInfoPath = path.join(uploadsDir, 'pdb-info.json');
+      if (!pdbId && fs.existsSync(pdbInfoPath)) {
         try {
-          const blockchainData = JSON.parse(fs.readFileSync(blockchainPath, 'utf8'));
-          
-          // Try multiple possible locations for PDB ID
-          pdbId = blockchainData.pdbId || 
-                       blockchainData.pdb_id || 
-                       blockchainData.data?.pdbId || 
-                       blockchainData.data?.pdb_id ||
-                       blockchainData.results?.pdbId ||
-                       blockchainData.results?.pdb_id ||
-                       blockchainData.verification_data?.ipfs?.content?.results?.pdbId ||
-                       blockchainData.verification_data?.ipfs?.content?.results?.data?.pdb_id ||
-                       blockchainData.verification_data?.ipfs?.content?.results?.data?.details?.descriptors?.pdb_id;
-          
-          
-          if (pdbId) {
-            
-            // Fetch PDB from RCSB PDB database
-            const pdbResponse = await fetch(`https://files.rcsb.org/download/${pdbId}.pdb`);
-            if (pdbResponse.ok) {
-              pdbContent = await pdbResponse.text();
-              
-              // Save the PDB file for future use
-              fs.writeFileSync(pdbPath, pdbContent);
-            } else {
-              throw new Error(`Failed to fetch PDB ${pdbId} from RCSB: ${pdbResponse.statusText}`);
-            }
-          } else {
-          }
-        } catch (error) {
+          const pdbInfo = JSON.parse(fs.readFileSync(pdbInfoPath, 'utf8'));
+          pdbId = pdbInfo.pdb_id;
+        } catch (_) {}
+      }
+
+      // Fallback: try blockchain.json
+      if (!pdbId) {
+        const blockchainPath = path.join(uploadsDir, 'blockchain.json');
+        if (fs.existsSync(blockchainPath)) {
+          try {
+            const blockchainData = JSON.parse(fs.readFileSync(blockchainPath, 'utf8'));
+            pdbId = blockchainData.pdbId ||
+                         blockchainData.pdb_id ||
+                         blockchainData.data?.pdbId ||
+                         blockchainData.data?.pdb_id ||
+                         blockchainData.results?.pdbId ||
+                         blockchainData.results?.pdb_id ||
+                         blockchainData.verification_data?.ipfs?.content?.results?.pdbId ||
+                         blockchainData.verification_data?.ipfs?.content?.results?.data?.pdb_id ||
+                         blockchainData.verification_data?.ipfs?.content?.results?.data?.details?.descriptors?.pdb_id;
+          } catch (_) {}
+        }
+      }
+
+      // Fetch PDB from RCSB if we have an ID
+      if (pdbId) {
+        const pdbResponse = await fetch(`https://files.rcsb.org/download/${pdbId}.pdb`);
+        if (pdbResponse.ok) {
+          pdbContent = await pdbResponse.text();
+          // Save the PDB file for future use
+          fs.writeFileSync(pdbPath, pdbContent);
+        } else {
+          throw new Error(`Failed to fetch PDB ${pdbId} from RCSB: ${pdbResponse.statusText}`);
         }
       }
       

@@ -328,7 +328,7 @@ export default function AccountPage() {
     return (
       <ProtectedRoute>
         <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-          <CircularProgress sx={{ color: '#40C057' }} />
+          <CircularProgress sx={{ color: '#16a34a' }} />
         </Box>
       </ProtectedRoute>
     );
@@ -339,10 +339,10 @@ export default function AccountPage() {
       <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3 }}>
         {/* Header */}
         <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" component="h1" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 'bold' }}>
+          <Typography variant="h4" component="h1" gutterBottom sx={{ color: '#0f172a', fontWeight: 800 }}>
             Account Settings
           </Typography>
-          <Typography variant="body1" sx={{ color: '#424242', fontSize: '1.1rem' }}>
+          <Typography variant="body1" sx={{ color: '#64748b' }}>
             Manage your profile, security, and preferences
           </Typography>
         </Box>
@@ -372,11 +372,11 @@ export default function AccountPage() {
               '& .MuiTab-root': {
                 color: '#666',
                 '&.Mui-selected': {
-                  color: '#40C057',
+                  color: '#16a34a',
                 }
               },
               '& .MuiTabs-indicator': {
-                backgroundColor: '#40C057',
+                backgroundColor: '#16a34a',
               }
             }}
           >
@@ -392,11 +392,27 @@ export default function AccountPage() {
         <TabPanel value={tabValue} index={0}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={4}>
-              <Card>
-                <CardContent sx={{ textAlign: 'center' }}>
-                  <Box sx={{ position: 'relative', display: 'inline-block', mb: 2 }}>
+              <Card sx={{ overflow: 'hidden' }}>
+                {/* Gradient banner */}
+                <Box
+                  sx={{
+                    height: 100,
+                    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 60%, #0f172a 100%)',
+                  }}
+                />
+                <CardContent sx={{ textAlign: 'center', mt: -7 }}>
+                  <Box sx={{ position: 'relative', display: 'inline-block', mb: 1.5 }}>
                     <Avatar
-                      sx={{ width: 120, height: 120, mx: 'auto', mb: 2 }}
+                      sx={{
+                        width: 96,
+                        height: 96,
+                        mx: 'auto',
+                        border: '4px solid #fff',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                        fontSize: '2rem',
+                        fontWeight: 700,
+                        bgcolor: '#16a34a',
+                      }}
                       src={userProfile.avatar || undefined}
                     >
                       {userProfile.name ? userProfile.name.split(' ').map(n => n[0]).join('') : 'U'}
@@ -414,22 +430,42 @@ export default function AccountPage() {
                         sx={{
                           position: 'absolute',
                           bottom: 0,
-                          right: 0,
-                          bgcolor: '#40C057',
+                          right: -4,
+                          bgcolor: '#16a34a',
                           color: 'white',
-                          '&:hover': { bgcolor: '#2fa347' }
+                          width: 30,
+                          height: 30,
+                          '&:hover': { bgcolor: '#15803d' }
                         }}
-                        size="small"
                       >
-                        <PhotoCamera fontSize="small" />
+                        <PhotoCamera sx={{ fontSize: 16 }} />
                       </IconButton>
                     </label>
                   </Box>
-                  <Typography variant="h6">{userProfile.name || 'User'}</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    {userProfile.role || 'User'}
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f172a', mb: 0.25 }}>
+                    {userProfile.name || 'User'}
                   </Typography>
-                  <Chip label={`${userProfile.plan || 'Free'} Plan`.replace(/^./, c => c.toUpperCase())} sx={{ bgcolor: '#40C057', color: 'white' }} size="small" />
+                  <Typography variant="body2" sx={{ color: '#64748b', mb: 1.5 }}>
+                    {userProfile.email || ''}
+                  </Typography>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    {userProfile.role && (
+                      <Chip label={userProfile.role} size="small" variant="outlined" sx={{ fontSize: '0.75rem' }} />
+                    )}
+                    {userProfile.organization && (
+                      <Chip label={userProfile.organization} size="small" variant="outlined" sx={{ fontSize: '0.75rem' }} />
+                    )}
+                    <Chip
+                      label={`${userProfile.plan || 'Free'} Plan`.replace(/^./, c => c.toUpperCase())}
+                      size="small"
+                      sx={{ bgcolor: '#dcfce7', color: '#16a34a', fontWeight: 600, fontSize: '0.75rem' }}
+                    />
+                  </Box>
+                  {userProfile.joinDate && (
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: '#94a3b8' }}>
+                      Member since {new Date(userProfile.joinDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </Typography>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -438,84 +474,75 @@ export default function AccountPage() {
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Typography variant="h6">Profile Information</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f172a' }}>Profile Information</Typography>
                     <Button
                       startIcon={editMode ? <Save /> : <Edit />}
                       onClick={editMode ? handleProfileSave : () => setEditMode(true)}
                       variant={editMode ? "contained" : "outlined"}
                       disabled={saving}
-                      sx={editMode ? { bgcolor: '#40C057', '&:hover': { bgcolor: '#2fa347' } } : { color: '#40C057', borderColor: '#40C057', '&:hover': { borderColor: '#2fa347', color: '#2fa347' } }}
+                      size="small"
+                      sx={editMode
+                        ? { bgcolor: '#16a34a', borderRadius: '100px', textTransform: 'none', '&:hover': { bgcolor: '#15803d' } }
+                        : { color: '#16a34a', borderColor: '#16a34a', borderRadius: '100px', textTransform: 'none', '&:hover': { borderColor: '#15803d', color: '#15803d' } }
+                      }
                     >
                       {saving ? 'Saving...' : (editMode ? 'Save Changes' : 'Edit Profile')}
                     </Button>
                   </Box>
 
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        label="Full Name"
-                        value={userProfile.name}
-                        onChange={(e) => setUserProfile({...userProfile, name: e.target.value})}
-                        disabled={!editMode}
-                        variant="outlined"
-                      />
+                  {editMode ? (
+                    /* Edit mode — TextFields */
+                    <>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <TextField fullWidth label="Full Name" value={userProfile.name} onChange={(e) => setUserProfile({...userProfile, name: e.target.value})} variant="outlined" size="small" />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextField fullWidth label="Email" value={userProfile.email} onChange={(e) => setUserProfile({...userProfile, email: e.target.value})} variant="outlined" size="small" />
+                        </Grid>
+                        <Grid item xs={12}>
+                          <TextField fullWidth label="Bio" value={userProfile.bio} onChange={(e) => setUserProfile({...userProfile, bio: e.target.value})} multiline rows={3} variant="outlined" size="small" />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextField fullWidth label="Organization" value={userProfile.organization} onChange={(e) => setUserProfile({...userProfile, organization: e.target.value})} variant="outlined" size="small" />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <TextField fullWidth label="Role" value={userProfile.role} onChange={(e) => setUserProfile({...userProfile, role: e.target.value})} variant="outlined" size="small" />
+                        </Grid>
+                      </Grid>
+                      <Box sx={{ mt: 2 }}>
+                        <Button startIcon={<Cancel />} onClick={handleProfileCancel} variant="outlined" disabled={saving} size="small" sx={{ borderRadius: '100px', textTransform: 'none' }}>
+                          Cancel
+                        </Button>
+                      </Box>
+                    </>
+                  ) : (
+                    /* Read-only mode — clean text display */
+                    <Grid container spacing={3}>
+                      {[
+                        { label: 'Full Name', value: userProfile.name },
+                        { label: 'Email', value: userProfile.email },
+                        { label: 'Organization', value: userProfile.organization },
+                        { label: 'Role', value: userProfile.role },
+                      ].map((field) => (
+                        <Grid item xs={12} sm={6} key={field.label}>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
+                            {field.label}
+                          </Typography>
+                          <Typography sx={{ color: '#0f172a', fontWeight: 500, mt: 0.25 }}>
+                            {field.value || '—'}
+                          </Typography>
+                        </Grid>
+                      ))}
+                      <Grid item xs={12}>
+                        <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>
+                          Bio
+                        </Typography>
+                        <Typography sx={{ color: '#0f172a', mt: 0.25 }}>
+                          {userProfile.bio || '—'}
+                        </Typography>
+                      </Grid>
                     </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        label="Email"
-                        value={userProfile.email}
-                        onChange={(e) => setUserProfile({...userProfile, email: e.target.value})}
-                        disabled={!editMode}
-                        variant="outlined"
-                      />
-                    </Grid>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Bio"
-                        value={userProfile.bio}
-                        onChange={(e) => setUserProfile({...userProfile, bio: e.target.value})}
-                        disabled={!editMode}
-                        multiline
-                        rows={3}
-                        variant="outlined"
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        label="Organization"
-                        value={userProfile.organization}
-                        onChange={(e) => setUserProfile({...userProfile, organization: e.target.value})}
-                        disabled={!editMode}
-                        variant="outlined"
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth
-                        label="Role"
-                        value={userProfile.role}
-                        onChange={(e) => setUserProfile({...userProfile, role: e.target.value})}
-                        disabled={!editMode}
-                        variant="outlined"
-                      />
-                    </Grid>
-                  </Grid>
-
-                  {editMode && (
-                    <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                      <Button
-                        startIcon={<Cancel />}
-                        onClick={handleProfileCancel}
-                        variant="outlined"
-                        disabled={saving}
-                      >
-                        Cancel
-                      </Button>
-                    </Box>
                   )}
                 </CardContent>
               </Card>
@@ -673,25 +700,25 @@ export default function AccountPage() {
                   <Grid container spacing={2}>
                     <Grid item xs={6}>
                       <Box sx={{ textAlign: 'center' }}>
-                        <Typography variant="h4" sx={{ color: '#40C057' }}>{userStats?.stats?.workflows || 0}</Typography>
+                        <Typography variant="h4" sx={{ color: '#16a34a' }}>{userStats?.stats?.workflows || 0}</Typography>
                         <Typography variant="body2">Workflows</Typography>
                       </Box>
                     </Grid>
                     <Grid item xs={6}>
                       <Box sx={{ textAlign: 'center' }}>
-                        <Typography variant="h4" sx={{ color: '#40C057' }}>{userStats?.stats?.analyses || 0}</Typography>
+                        <Typography variant="h4" sx={{ color: '#16a34a' }}>{userStats?.stats?.analyses || 0}</Typography>
                         <Typography variant="body2">Analyses</Typography>
                       </Box>
                     </Grid>
                     <Grid item xs={6}>
                       <Box sx={{ textAlign: 'center' }}>
-                        <Typography variant="h4" sx={{ color: '#40C057' }}>{userStats?.stats?.storage || 0} GB</Typography>
+                        <Typography variant="h4" sx={{ color: '#16a34a' }}>{userStats?.stats?.storage || 0} GB</Typography>
                         <Typography variant="body2">Storage Used</Typography>
                       </Box>
                     </Grid>
                     <Grid item xs={6}>
                       <Box sx={{ textAlign: 'center' }}>
-                        <Typography variant="h4" sx={{ color: '#40C057' }}>{userStats?.stats?.collaborations || 0}</Typography>
+                        <Typography variant="h4" sx={{ color: '#16a34a' }}>{userStats?.stats?.collaborations || 0}</Typography>
                         <Typography variant="body2">Collaborations</Typography>
                       </Box>
                     </Grid>
@@ -711,7 +738,7 @@ export default function AccountPage() {
                     <LinearProgress 
                       variant="determinate" 
                       value={userStats?.storageUsagePercent || 0} 
-                      sx={{ mt: 1, '& .MuiLinearProgress-bar': { backgroundColor: '#40C057' } }} 
+                      sx={{ mt: 1, '& .MuiLinearProgress-bar': { backgroundColor: '#16a34a' } }} 
                     />
                   </Box>
                   <Button variant="outlined" startIcon={<Upgrade />} size="small">
@@ -768,10 +795,10 @@ export default function AccountPage() {
                         onChange={handleDarkModeToggle}
                         sx={{
                           '& .MuiSwitch-switchBase.Mui-checked': {
-                            color: '#40C057',
+                            color: '#16a34a',
                           },
                           '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                            backgroundColor: '#40C057',
+                            backgroundColor: '#16a34a',
                           },
                         }}
                       />
@@ -879,7 +906,7 @@ export default function AccountPage() {
             <Button 
               variant="contained" 
               onClick={handlePasswordChange}
-              sx={{ bgcolor: '#40C057', '&:hover': { bgcolor: '#2fa347' } }}
+              sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
             >
               Change Password
             </Button>

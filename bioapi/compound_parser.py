@@ -14,7 +14,19 @@ from typing import Dict, Any, List, Tuple
 
 logger = logging.getLogger(__name__)
 
-MAX_COMPOUNDS = 500
+MAX_COMPOUNDS = 10000
+
+# Common column-name aliases → canonical name
+_NAME_ALIASES = {
+    "name", "mol_name", "molecule_name", "compound_name", "compound",
+    "mol", "drug_name", "drug", "ligand_name", "ligand", "title",
+    "iupac_name", "common_name", "id", "mol_id", "molecule_id",
+    "compound_id",
+}
+_SMILES_ALIASES = {
+    "smiles", "canonical_smiles", "isomeric_smiles", "smi",
+    "canonical_smi", "molecule_smiles", "mol_smiles", "structure",
+}
 
 
 def _import_rdkit():
@@ -88,15 +100,41 @@ def parse_csv(file_content: str) -> Dict[str, Any]:
     compounds: List[Dict[str, Any]] = []
     warnings: List[str] = []
 
-    reader = csv.DictReader(io.StringIO(file_content))
+    # Auto-detect delimiter (tab vs comma vs semicolon)
+    try:
+        sample = file_content[:4096]
+        dialect = csv.Sniffer().sniff(sample, delimiters=',\t;|')
+        delimiter = dialect.delimiter
+    except csv.Error:
+        # Fallback: if first line has tabs, use tab; otherwise comma
+        first_line = file_content.split('\n', 1)[0]
+        delimiter = '\t' if '\t' in first_line else ','
+
+    reader = csv.DictReader(io.StringIO(file_content), delimiter=delimiter)
     headers = [h.strip().lower() for h in (reader.fieldnames or [])]
 
-    if "name" not in headers or "smiles" not in headers:
+    # Flexible column matching: find which header maps to 'name' and 'smiles'
+    name_col = None
+    smiles_col = None
+    for h in headers:
+        if h in _NAME_ALIASES and name_col is None:
+            name_col = h
+        if h in _SMILES_ALIASES and smiles_col is None:
+            smiles_col = h
+
+    if smiles_col is None:
         return {
             "compounds": [],
-            "warnings": ["CSV must have 'name' and 'smiles' columns"],
+            "warnings": [
+                f"CSV must have a SMILES column. Accepted names: {', '.join(sorted(_SMILES_ALIASES))}. "
+                f"Found columns: {', '.join(headers)}"
+            ],
             "count": 0,
         }
+
+    if name_col is None:
+        # No name column — we'll auto-generate names
+        warnings.append("No name column found; compounds will be auto-numbered")
 
     for idx, row in enumerate(reader):
         if len(compounds) >= MAX_COMPOUNDS:
@@ -107,8 +145,8 @@ def parse_csv(file_content: str) -> Dict[str, Any]:
 
         # Normalise keys
         row = {k.strip().lower(): v.strip() for k, v in row.items()}
-        name = row.get("name", "").strip()
-        smiles = row.get("smiles", "").strip()
+        name = row.get(name_col, "").strip() if name_col else ""
+        smiles = row.get(smiles_col, "").strip()
 
         if not smiles:
             warnings.append(f"Row {idx + 2}: missing SMILES, skipped")

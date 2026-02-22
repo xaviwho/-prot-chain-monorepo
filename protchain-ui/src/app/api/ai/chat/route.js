@@ -30,7 +30,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { message, history = [], workflowContext = {} } = body;
+    const { message, history = [], workflowContext = {}, fileContext = null } = body;
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
@@ -74,10 +74,20 @@ export async function POST(request) {
       }
 
       contextBlock = contextParts.join('\n');
-      // Hard cap total context at 50K chars
-      if (contextBlock.length > 50000) {
-        contextBlock = contextBlock.slice(0, 50000) + '\n... (context truncated)';
+    }
+
+    // Append uploaded file content if present
+    if (fileContext && fileContext.content) {
+      let fileContent = fileContext.content;
+      if (fileContent.length > 50000) {
+        fileContent = fileContent.slice(0, 50000) + '\n... (file content truncated)';
       }
+      contextBlock += `\n\n--- Uploaded File: ${fileContext.name || 'unknown'} (${fileContext.type || 'txt'}) ---\n${fileContent}`;
+    }
+
+    // Hard cap total context at 100K chars
+    if (contextBlock.length > 100000) {
+      contextBlock = contextBlock.slice(0, 100000) + '\n... (context truncated)';
     }
 
     // Build messages array from history (cap at last 10 exchanges)
@@ -106,7 +116,7 @@ export async function POST(request) {
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
+      max_tokens: fileContext ? 2048 : 1024,
       system: SYSTEM_PROMPT,
       messages: messages,
     });

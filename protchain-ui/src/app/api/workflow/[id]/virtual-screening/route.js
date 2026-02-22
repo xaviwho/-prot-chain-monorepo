@@ -58,6 +58,8 @@ export async function POST(request, { params }) {
     const compoundLibrary = requestBody.compound_library || 'fda_approved';
     const maxCompounds = requestBody.max_compounds || 50;
     const dockingMethod = requestBody.docking_method || 'physics'; // "physics" or "vina"
+    const compoundRangeStart = requestBody.compound_range_start; // 1-based
+    const compoundRangeEnd = requestBody.compound_range_end;     // 1-based, inclusive
 
     // Load custom compounds if user selected 'custom' library
     let customCompounds = null;
@@ -75,6 +77,18 @@ export async function POST(request, { params }) {
           return NextResponse.json({
             error: 'Custom compound file is empty. Please upload a valid compound file.'
           }, { status: 400 });
+        }
+
+        // Apply molecule range selection (1-based, inclusive)
+        if (compoundRangeStart && compoundRangeEnd) {
+          const start = Math.max(0, compoundRangeStart - 1); // convert to 0-based
+          const end = Math.min(customCompounds.length, compoundRangeEnd); // slice end is exclusive
+          customCompounds = customCompounds.slice(start, end);
+          if (customCompounds.length === 0) {
+            return NextResponse.json({
+              error: `No compounds in range ${compoundRangeStart}-${compoundRangeEnd}. File has ${parsedData.compounds.length} compounds.`
+            }, { status: 400 });
+          }
         }
       } catch (e) {
         return NextResponse.json({

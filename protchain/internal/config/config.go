@@ -62,9 +62,9 @@ func Load() *Config {
 		DBMaxIdleConns:       getEnvInt("DB_MAX_IDLE_CONNS", 5),
 		DBConnMaxLifetimeSec: getEnvInt("DB_CONN_MAX_LIFETIME_SEC", 300),
 
-		HTTPReadTimeout:  getEnvInt("HTTP_READ_TIMEOUT_SEC", 15),
-		HTTPWriteTimeout: getEnvInt("HTTP_WRITE_TIMEOUT_SEC", 15),
-		HTTPIdleTimeout:  getEnvInt("HTTP_IDLE_TIMEOUT_SEC", 60),
+		HTTPReadTimeout:  getEnvInt("HTTP_READ_TIMEOUT_SEC", 600),
+		HTTPWriteTimeout: getEnvInt("HTTP_WRITE_TIMEOUT_SEC", 600),
+		HTTPIdleTimeout:  getEnvInt("HTTP_IDLE_TIMEOUT_SEC", 120),
 
 		RateLimitRPS:   float64(getEnvInt("RATE_LIMIT_RPS", 100)),
 		RateLimitBurst: getEnvInt("RATE_LIMIT_BURST", 200),

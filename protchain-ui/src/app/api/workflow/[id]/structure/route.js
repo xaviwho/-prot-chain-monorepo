@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 
 // The bioapi service URL, should be in an env var but hardcoded for now
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
@@ -84,6 +86,30 @@ export async function POST(request, { params }) {
     }
 
     const data = isJson ? await backendResponse.json() : await backendResponse.text();
+
+    // Save PDB info to uploads directory so binding site analysis can find it
+    if (isJson && body.pdb_id) {
+      try {
+        const rootDir = path.resolve(process.cwd(), '..');
+        const uploadsDir = path.join(rootDir, 'uploads', workflowId);
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        fs.writeFileSync(
+          path.join(uploadsDir, 'pdb-info.json'),
+          JSON.stringify({ pdb_id: body.pdb_id, timestamp: new Date().toISOString() })
+        );
+        // Also fetch and save the PDB file for downstream use
+        const pdbResponse = await fetch(`https://files.rcsb.org/download/${body.pdb_id}.pdb`);
+        if (pdbResponse.ok) {
+          const pdbContent = await pdbResponse.text();
+          fs.writeFileSync(path.join(uploadsDir, 'input.pdb'), pdbContent);
+        }
+      } catch (saveError) {
+        // Non-critical — don't fail the request
+      }
+    }
+
     return isJson ? NextResponse.json(data) : new NextResponse(data);
   } catch (err) {
     clearTimeout(timeout);

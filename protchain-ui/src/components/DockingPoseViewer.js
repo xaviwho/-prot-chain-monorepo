@@ -96,7 +96,13 @@ const DockingPoseViewer = ({ compound, workflowId, pdbId, onClose }) => {
       }
 
       // --- Load docked ligand pose ---
-      const poseSdf = compound.pose_sdf;
+      // If compound has all_poses_sdf (array), pick the selected pose; otherwise use pose_sdf
+      let poseSdf = compound.pose_sdf;
+      const poseIndex = compound.selected_pose_index ?? 0;
+      if (compound.all_poses_sdf && Array.isArray(compound.all_poses_sdf) && compound.all_poses_sdf[poseIndex]) {
+        poseSdf = compound.all_poses_sdf[poseIndex];
+      }
+
       if (poseSdf) {
         // Detect format: SDF vs PDBQT
         const isSdf = poseSdf.includes('M  END') || poseSdf.includes('$$$$');
@@ -132,13 +138,15 @@ const DockingPoseViewer = ({ compound, workflowId, pdbId, onClose }) => {
   if (!compound) return null;
 
   const vinaScore = compound.vina_score_kcal ?? compound.predicted_binding_affinity_kcal;
+  const poseIdx = compound.selected_pose_index ?? 0;
+  const poseLabel = compound.all_poses_scores ? ` (Pose ${poseIdx + 1} of ${compound.all_poses_scores.length})` : '';
 
   return (
     <Dialog open={!!compound} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Box>
           <Typography variant="h6" component="span">
-            Docked Pose: {compound.name}
+            Docked Pose: {compound.name}{poseLabel}
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
             {vinaScore && (

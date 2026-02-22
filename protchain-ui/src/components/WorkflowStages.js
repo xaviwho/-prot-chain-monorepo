@@ -33,7 +33,8 @@ export default function WorkflowStages({
   currentStage,
   onStructureAnalysisComplete,
   onBindingSiteAnalysisComplete,
-  onVirtualScreeningComplete
+  onVirtualScreeningComplete,
+  onStageClick,
 }) {
   const [pdbId, setPdbId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,6 +52,9 @@ export default function WorkflowStages({
   // Docking method: "physics" (fast scoring) or "vina" (real Vina docking)
   const [dockingMethod, setDockingMethod] = useState('physics');
   const [compoundWarnings, setCompoundWarnings] = useState([]);
+  // Molecule range selection for large compound libraries
+  const [rangeStart, setRangeStart] = useState(1);
+  const [rangeEnd, setRangeEnd] = useState(500);
 
   // Fetch workflow state on component mount and when workflowId changes
   useEffect(() => {
@@ -74,7 +78,9 @@ export default function WorkflowStages({
           
           // Check for blockchain commits in localStorage (stage-specific)
           const recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
-          
+          // Check for local (non-blockchain) completions
+          const localCompletions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
+
           if (recentCommits[workflowId]) {
             // Store stage-specific blockchain data
             data.blockchainByStage = recentCommits[workflowId];
@@ -107,6 +113,15 @@ export default function WorkflowStages({
               }
             }
             
+            setCompletedStages(newCompletedStages);
+          }
+
+          // Also mark stages completed via local completions
+          if (localCompletions[workflowId]) {
+            const newCompletedStages = new Set(completedStages);
+            Object.keys(localCompletions[workflowId]).forEach(stageId => {
+              newCompletedStages.add(stageId);
+            });
             setCompletedStages(newCompletedStages);
           }
         }
@@ -167,37 +182,47 @@ export default function WorkflowStages({
     // Check if stage is completed based on blockchain commits
     const recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
     const workflowCommits = recentCommits[workflowId] || {};
-    
-    if (workflowCommits[stageId]) {
-      return 'completed';
+    // Check local (non-blockchain) completions
+    const localCompletions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
+    const workflowLocalCompletions = localCompletions[workflowId] || {};
+
+    const isBlockchainCommitted = !!workflowCommits[stageId];
+    const isLocallyCompleted = !!workflowLocalCompletions[stageId];
+
+    if (isBlockchainCommitted) {
+      return 'completed'; // Green checkmark
     }
-    
+
+    if (isLocallyCompleted) {
+      return 'completed_local'; // Amber indicator — done but not on blockchain
+    }
+
     // Check if stage is completed based on API data
     if (workflowData?.completed_stages?.includes(stageId)) {
       return 'completed';
     }
-    
+
     // Sequential stage activation logic
     const stageOrder = ['structure_preparation', 'binding_site_analysis', 'virtual_screening', 'molecular_dynamics', 'lead_optimization'];
     const currentStageIndex = stageOrder.indexOf(stageId);
-    
+
     // Structure preparation is always active initially
     if (stageId === 'structure_preparation') {
-      return workflowCommits['structure_preparation'] ? 'completed' : 'active';
+      return 'active';
     }
-    
-    // For subsequent stages, check if previous stage is blockchain committed
+
+    // For subsequent stages, check if previous stage is completed (either way)
     if (currentStageIndex > 0) {
       const previousStage = stageOrder[currentStageIndex - 1];
-      const isPreviousStageCommitted = workflowCommits[previousStage];
-      
-      if (isPreviousStageCommitted) {
+      const isPreviousCompleted = !!workflowCommits[previousStage] || !!workflowLocalCompletions[previousStage] || workflowData?.completed_stages?.includes(previousStage);
+
+      if (isPreviousCompleted) {
         return 'active';
       } else {
         return 'pending';
       }
     }
-    
+
     return 'pending';
   };
 
@@ -342,8 +367,10 @@ export default function WorkflowStages({
         headers,
         body: JSON.stringify({
           compound_library: compoundSource,
-          max_compounds: 50,
+          max_compounds: compoundSource === 'custom' ? (rangeEnd - rangeStart + 1) : 50,
           docking_method: dockingMethod,
+          compound_range_start: compoundSource === 'custom' ? rangeStart : undefined,
+          compound_range_end: compoundSource === 'custom' ? rangeEnd : undefined,
         }),
       });
 
@@ -414,6 +441,8 @@ export default function WorkflowStages({
         setCustomCompoundsReady(true);
         setCompoundCount(data.count);
         setCompoundWarnings(data.warnings || []);
+        setRangeStart(1);
+        setRangeEnd(Math.min(data.count, 500));
         setSuccess(`${data.count} compounds parsed successfully!`);
       } else {
         setError(data.error || 'Failed to parse compounds');
@@ -450,40 +479,51 @@ export default function WorkflowStages({
     const status = getStageStatus(stage.id);
     const isActive = status === 'active';
     const isCompleted = status === 'completed';
+    const isCompletedLocal = status === 'completed_local';
+    const isDone = isCompleted || isCompletedLocal;
     const isPending = status === 'pending';
-    
+    const isClickable = isDone && onStageClick;
+
     return (
       <Grid item xs={12} md={6} lg={4} key={stage.id}>
-        <Card 
-          sx={{ 
+        <Card
+          onClick={isClickable ? () => onStageClick(stage.id) : undefined}
+          sx={{
             height: '100%',
-            border: isActive ? `2px solid ${stage.color}` : '1px solid #e0e0e0',
+            border: isActive ? `2px solid ${stage.color}` : isCompletedLocal ? '2px solid #FF9800' : '1px solid #e0e0e0',
             boxShadow: isActive ? 3 : 1,
             opacity: isPending ? 0.6 : 1,
+            cursor: isClickable ? 'pointer' : 'default',
+            '&:hover': isClickable ? { boxShadow: 4, transform: 'translateY(-2px)', transition: 'all 0.2s' } : {},
           }}
         >
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Box 
-                sx={{ 
-                  p: 1, 
-                  borderRadius: '50%', 
-                  backgroundColor: isCompleted ? '#4CAF50' : stage.color + '20',
-                  color: isCompleted ? 'white' : stage.color,
-                  mr: 2 
+              <Box
+                sx={{
+                  p: 1,
+                  borderRadius: '50%',
+                  backgroundColor: isCompleted ? '#4CAF50' : isCompletedLocal ? '#FF9800' : stage.color + '20',
+                  color: isDone ? 'white' : stage.color,
+                  mr: 2
                 }}
               >
-                {isCompleted ? <CheckCircle /> : stage.icon}
+                {isCompleted ? <CheckCircle /> : isCompletedLocal ? <CheckCircle /> : stage.icon}
               </Box>
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" component="h3">
                   {stage.title}
                 </Typography>
-                <Chip 
-                  label={status.toUpperCase()} 
-                  size="small" 
-                  color={isCompleted ? 'success' : isActive ? 'primary' : 'default'}
+                <Chip
+                  label={isCompletedLocal ? 'COMPLETED (LOCAL)' : status.toUpperCase()}
+                  size="small"
+                  color={isCompleted ? 'success' : isCompletedLocal ? 'warning' : isActive ? 'primary' : 'default'}
                 />
+                {isClickable && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    Click to view results
+                  </Typography>
+                )}
               </Box>
             </Box>
             
@@ -590,29 +630,73 @@ export default function WorkflowStages({
                           </Button>
                         </Box>
                         <Typography variant="caption" color="text.secondary">
-                          CSV needs <strong>name</strong> and <strong>smiles</strong> columns. Max 500 compounds.
+                          CSV needs <strong>name</strong> and <strong>smiles</strong> columns. Max 20 MB file size.
                         </Typography>
                       </>
                     ) : (
                       <Box>
-                        <Chip
-                          label={`${compoundCount} custom compounds ready`}
-                          color="success"
-                          size="small"
-                          sx={{ mr: 1 }}
-                        />
-                        <Button
-                          size="small"
-                          onClick={() => {
-                            setCustomCompoundsReady(false);
-                            setCompoundFile(null);
-                            setCompoundCount(0);
-                            setCompoundWarnings([]);
-                          }}
-                          sx={{ textTransform: 'none', fontSize: '0.7rem' }}
-                        >
-                          Change
-                        </Button>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                          <Chip
+                            label={`${compoundCount} compounds parsed`}
+                            color="success"
+                            size="small"
+                            sx={{ mr: 1 }}
+                          />
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setCustomCompoundsReady(false);
+                              setCompoundFile(null);
+                              setCompoundCount(0);
+                              setCompoundWarnings([]);
+                              setRangeStart(1);
+                              setRangeEnd(500);
+                            }}
+                            sx={{ textTransform: 'none', fontSize: '0.7rem' }}
+                          >
+                            Change
+                          </Button>
+                        </Box>
+
+                        {/* Molecule range selector */}
+                        <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
+                          Docking Range (select which molecules to dock)
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                          <TextField
+                            type="number"
+                            size="small"
+                            label="From"
+                            value={rangeStart}
+                            onChange={(e) => {
+                              const v = Math.max(1, Math.min(Number(e.target.value) || 1, compoundCount));
+                              setRangeStart(v);
+                              if (v > rangeEnd) setRangeEnd(v);
+                            }}
+                            inputProps={{ min: 1, max: compoundCount }}
+                            sx={{ width: 90, '& input': { py: 0.75, fontSize: '0.8rem' } }}
+                          />
+                          <Typography variant="caption" color="text.secondary">to</Typography>
+                          <TextField
+                            type="number"
+                            size="small"
+                            label="To"
+                            value={rangeEnd}
+                            onChange={(e) => {
+                              const v = Math.max(rangeStart, Math.min(Number(e.target.value) || rangeStart, compoundCount));
+                              setRangeEnd(v);
+                            }}
+                            inputProps={{ min: rangeStart, max: compoundCount }}
+                            sx={{ width: 90, '& input': { py: 0.75, fontSize: '0.8rem' } }}
+                          />
+                          <Typography variant="caption" color="text.secondary">
+                            of {compoundCount}
+                          </Typography>
+                        </Box>
+                        <Typography variant="caption" color="text.secondary">
+                          Will dock <strong>{Math.max(0, rangeEnd - rangeStart + 1)}</strong> molecule{rangeEnd - rangeStart !== 0 ? 's' : ''}
+                        </Typography>
+
                         {compoundWarnings.length > 0 && (
                           <Alert severity="warning" sx={{ mt: 1, py: 0 }}>
                             <Typography variant="caption">
@@ -684,7 +768,7 @@ export default function WorkflowStages({
               </Box>
             )}
             
-            {stage.id === 'structure_preparation' && isActive && (
+            {stage.id === 'structure_preparation' && isActive && !isDone && (
               <Box sx={{ mb: 2 }}>
                 <TextField
                   label="PDB ID"
@@ -698,8 +782,8 @@ export default function WorkflowStages({
                 />
               </Box>
             )}
-            
-            {(isActive || (stage.id === 'structure_preparation' && !isCompleted)) && (
+
+            {(isActive && !isDone) && (
               <Button
                 variant="contained"
                 onClick={() => handleStageAction(stage.id)}
@@ -730,7 +814,10 @@ export default function WorkflowStages({
         </Typography>
         {(() => {
           const total = stages.length;
-          const completed = stages.filter(s => getStageStatus(s.id) === 'completed').length;
+          const completedStatuses = stages.map(s => getStageStatus(s.id));
+          const blockchainCount = completedStatuses.filter(st => st === 'completed').length;
+          const localCount = completedStatuses.filter(st => st === 'completed_local').length;
+          const completed = blockchainCount + localCount;
           const percentage = total > 0 ? (completed / total) * 100 : 0;
           return (
             <>
@@ -743,12 +830,17 @@ export default function WorkflowStages({
                   backgroundColor: 'rgba(76, 175, 80, 0.15)',
                   '& .MuiLinearProgress-bar': {
                     borderRadius: 4,
-                    backgroundColor: '#4CAF50',
+                    backgroundColor: blockchainCount === completed ? '#4CAF50' : '#FF9800',
                   },
                 }}
               />
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                 {completed} of {total} stages completed
+                {localCount > 0 && blockchainCount < completed && (
+                  <span style={{ color: '#FF9800', marginLeft: 8 }}>
+                    ({localCount} pending blockchain commit)
+                  </span>
+                )}
               </Typography>
             </>
           );

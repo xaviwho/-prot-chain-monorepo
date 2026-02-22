@@ -157,26 +157,75 @@ export default function WorkflowDetailPage() {
     }
   };
 
+  // Cache results to localStorage whenever they change
+  const cacheStageResults = (stageId, stageResults) => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('stageResults') || '{}');
+      if (!cached[params.id]) cached[params.id] = {};
+      cached[params.id][stageId] = stageResults;
+      localStorage.setItem('stageResults', JSON.stringify(cached));
+    } catch (e) {
+      // localStorage full or corrupt — ignore
+    }
+  };
+
   const handleStructureAnalysisComplete = (analysisResults) => {
     setResults(analysisResults);
     setStage('structure_preparation');
+    cacheStageResults('structure_preparation', analysisResults);
     setActiveTab(1); // Switch to results tab
   };
 
   const handleBindingSiteAnalysisComplete = (analysisResults) => {
     setResults(analysisResults);
     setStage('binding_site_analysis');
+    cacheStageResults('binding_site_analysis', analysisResults);
     setActiveTab(1); // Switch to results tab
   };
 
   const handleVirtualScreeningComplete = (screeningResults) => {
     // Merge virtual screening results into existing results
-    setResults(prev => ({
-      ...prev,
-      virtual_screening: screeningResults
-    }));
+    const merged = { ...results, virtual_screening: screeningResults };
+    setResults(merged);
     setStage('virtual_screening');
+    cacheStageResults('virtual_screening', merged);
     setActiveTab(1); // Switch to results tab
+  };
+
+  const handleStageClick = (stageId) => {
+    // Load cached results for the clicked stage and switch to Results tab
+    try {
+      const cached = JSON.parse(localStorage.getItem('stageResults') || '{}');
+      const cachedResults = cached[params.id]?.[stageId];
+      if (cachedResults) {
+        setResults(cachedResults);
+        setStage(stageId);
+        setActiveTab(1); // Switch to Results tab
+      }
+    } catch (e) {
+      // Ignore
+    }
+  };
+
+  const handleProceedWithoutCommitting = (currentStage, currentResults) => {
+    // Save results to localStorage cache
+    cacheStageResults(currentStage, currentResults);
+
+    // Mark stage as locally completed
+    try {
+      const completions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
+      if (!completions[params.id]) completions[params.id] = {};
+      completions[params.id][currentStage] = {
+        timestamp: new Date().toISOString(),
+        stage: currentStage
+      };
+      localStorage.setItem('stageCompletions', JSON.stringify(completions));
+    } catch (e) {
+      // Ignore
+    }
+
+    // Switch back to Pipeline tab so the user sees the next stage unlocked
+    setActiveTab(0);
   };
 
   if (loading) {
@@ -321,6 +370,7 @@ export default function WorkflowDetailPage() {
             onStructureAnalysisComplete={handleStructureAnalysisComplete}
             onBindingSiteAnalysisComplete={handleBindingSiteAnalysisComplete}
             onVirtualScreeningComplete={handleVirtualScreeningComplete}
+            onStageClick={handleStageClick}
           />
         </TabPanel>
         
@@ -331,6 +381,7 @@ export default function WorkflowDetailPage() {
               results={results}
               stage={stage}
               workflow={workflow}
+              onProceedWithoutCommitting={handleProceedWithoutCommitting}
             />
           ) : (
             <Box sx={{ textAlign: 'center', py: 8 }}>

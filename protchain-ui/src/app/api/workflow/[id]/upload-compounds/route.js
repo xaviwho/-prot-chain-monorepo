@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 export async function POST(request, { params }) {
   try {
@@ -32,7 +32,7 @@ export async function POST(request, { params }) {
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     if (fileBuffer.length > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: 'File too large (max 5 MB)' },
+        { error: 'File too large (max 20 MB)' },
         { status: 400 }
       );
     }

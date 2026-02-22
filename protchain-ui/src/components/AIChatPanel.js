@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Drawer,
   Box,
@@ -18,6 +19,7 @@ import {
   SmartToy,
   Person,
   AutoAwesome,
+  AttachFile,
 } from '@mui/icons-material';
 
 const SUGGESTED_QUESTIONS = [
@@ -32,8 +34,39 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [attachedFile, setAttachedFile] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const MAX_FILE_SIZE = 500 * 1024; // 500KB
+
+  const handleFileSelect = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_FILE_SIZE) {
+      // Read anyway but will truncate
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      let content = e.target.result;
+      const truncated = content.length > MAX_FILE_SIZE;
+      if (truncated) {
+        content = content.slice(0, MAX_FILE_SIZE);
+      }
+      setAttachedFile({
+        name: file.name,
+        content,
+        type: file.name.split('.').pop().toLowerCase(),
+        truncated,
+      });
+    };
+    reader.readAsText(file);
+    // Reset so the same file can be re-selected
+    event.target.value = '';
+  };
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -91,20 +124,35 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
     const messageText = text || input.trim();
     if (!messageText) return;
 
-    const userMessage = { role: 'user', content: messageText };
+    const currentFile = attachedFile;
+    const userMessage = {
+      role: 'user',
+      content: messageText,
+      ...(currentFile && { fileName: currentFile.name }),
+    };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
+    setAttachedFile(null);
     setLoading(true);
 
     try {
+      const payload = {
+        message: messageText,
+        history: messages,
+        workflowContext: prepareContext(),
+      };
+      if (currentFile) {
+        payload.fileContext = {
+          name: currentFile.name,
+          content: currentFile.content,
+          type: currentFile.type,
+        };
+      }
+
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: messageText,
-          history: messages,
-          workflowContext: prepareContext(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -222,50 +270,86 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
         ) : (
           /* Message list */
           messages.map((msg, idx) => (
-            <Box
-              key={idx}
-              sx={{
-                display: 'flex',
-                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                gap: 1,
-              }}
-            >
-              {msg.role === 'assistant' && (
-                <SmartToy sx={{ fontSize: 20, color: '#7c4dff', mt: 0.5, flexShrink: 0 }} />
+            <Box key={idx} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {msg.fileName && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: 4 }}>
+                  <Chip
+                    icon={<AttachFile sx={{ fontSize: 14 }} />}
+                    label={msg.fileName}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: '0.7rem', height: 22 }}
+                  />
+                </Box>
               )}
-              <Paper
+              <Box
                 sx={{
-                  p: 1.5,
-                  maxWidth: '80%',
-                  backgroundColor: msg.role === 'user' ? '#1976d2' : 'white',
-                  color: msg.role === 'user' ? 'white' : 'text.primary',
-                  borderRadius: msg.role === 'user'
-                    ? '16px 16px 4px 16px'
-                    : '16px 16px 16px 4px',
+                  display: 'flex',
+                  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  gap: 1,
                 }}
               >
-                <Typography
-                  variant="body2"
+                {msg.role === 'assistant' && (
+                  <SmartToy sx={{ fontSize: 20, color: '#7c4dff', mt: 0.5, flexShrink: 0 }} />
+                )}
+                <Paper
                   sx={{
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    '& code': {
-                      backgroundColor: msg.role === 'user'
-                        ? 'rgba(255,255,255,0.2)'
-                        : 'rgba(0,0,0,0.05)',
-                      padding: '1px 4px',
-                      borderRadius: '4px',
-                      fontFamily: 'monospace',
-                      fontSize: '0.85em',
-                    },
+                    p: 1.5,
+                    maxWidth: '80%',
+                    backgroundColor: msg.role === 'user' ? '#1976d2' : 'white',
+                    color: msg.role === 'user' ? 'white' : 'text.primary',
+                    borderRadius: msg.role === 'user'
+                      ? '16px 16px 4px 16px'
+                      : '16px 16px 16px 4px',
                   }}
                 >
-                  {msg.content}
-                </Typography>
-              </Paper>
-              {msg.role === 'user' && (
-                <Person sx={{ fontSize: 20, color: '#1976d2', mt: 0.5, flexShrink: 0 }} />
-              )}
+                  {msg.role === 'assistant' ? (
+                    <Box
+                      sx={{
+                        fontSize: '0.875rem',
+                        wordBreak: 'break-word',
+                        '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
+                        '& h1, & h2, & h3': { mt: 1.5, mb: 0.5, fontSize: '0.95rem', fontWeight: 700 },
+                        '& h2': { fontSize: '0.9rem' },
+                        '& h3': { fontSize: '0.875rem' },
+                        '& ul, & ol': { m: 0, pl: 2.5, mb: 1 },
+                        '& li': { mb: 0.25 },
+                        '& strong': { fontWeight: 700 },
+                        '& code': {
+                          backgroundColor: 'rgba(0,0,0,0.05)',
+                          padding: '1px 4px',
+                          borderRadius: '4px',
+                          fontFamily: 'monospace',
+                          fontSize: '0.85em',
+                        },
+                        '& pre': {
+                          backgroundColor: 'rgba(0,0,0,0.05)',
+                          p: 1,
+                          borderRadius: 1,
+                          overflow: 'auto',
+                          '& code': { backgroundColor: 'transparent', p: 0 },
+                        },
+                        '& hr': { my: 1, border: 'none', borderTop: '1px solid rgba(0,0,0,0.12)' },
+                      }}
+                    >
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </Box>
+                  ) : (
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {msg.content}
+                    </Typography>
+                  )}
+                </Paper>
+                {msg.role === 'user' && (
+                  <Person sx={{ fontSize: 20, color: '#1976d2', mt: 0.5, flexShrink: 0 }} />
+                )}
+              </Box>
             </Box>
           ))
         )}
@@ -297,7 +381,42 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
           backgroundColor: 'white',
         }}
       >
+        {/* Attached file chip */}
+        {attachedFile && (
+          <Box sx={{ mb: 1 }}>
+            <Chip
+              icon={<AttachFile sx={{ fontSize: 16 }} />}
+              label={attachedFile.truncated ? `${attachedFile.name} (truncated)` : attachedFile.name}
+              onDelete={() => setAttachedFile(null)}
+              size="small"
+              color="primary"
+              variant="outlined"
+              sx={{ maxWidth: '100%' }}
+            />
+          </Box>
+        )}
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.csv,.txt,.pdb,.sdf,.mol2"
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
+          <IconButton
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading}
+            sx={{
+              color: attachedFile ? '#1976d2' : '#9e9e9e',
+              width: 40,
+              height: 40,
+              flexShrink: 0,
+            }}
+            title="Attach file"
+          >
+            <AttachFile fontSize="small" />
+          </IconButton>
           <TextField
             inputRef={inputRef}
             fullWidth
@@ -325,6 +444,7 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
               '&.Mui-disabled': { backgroundColor: '#e0e0e0', color: '#9e9e9e' },
               width: 40,
               height: 40,
+              flexShrink: 0,
             }}
           >
             <Send fontSize="small" />

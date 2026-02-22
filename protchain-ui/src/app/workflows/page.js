@@ -341,7 +341,7 @@ export default function WorkflowsPage() {
   };
 
   const getStageProgress = (workflow) => {
-    // Calculate progress from blockchain commits in localStorage + workflow status
+    // Calculate progress from blockchain commits + local completions in localStorage
     const stageOrder = [
       { id: 'structure_preparation', label: 'Structure Preparation' },
       { id: 'binding_site_analysis', label: 'Binding Site Analysis' },
@@ -358,20 +358,23 @@ export default function WorkflowsPage() {
     } catch (e) { /* ignore */ }
     const workflowCommits = recentCommits[workflow.id] || {};
 
-    // Also check workflow status from API — certain statuses imply stage completion
-    const status = workflow.status || 'draft';
-    const statusImpliesStructure = ['structure_processed', 'registered', 'completed'].includes(status);
+    // Check local (non-blockchain) completions
+    let localCompletions = {};
+    try {
+      localCompletions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
+    } catch (e) { /* ignore */ }
+    const workflowLocalCompletions = localCompletions[workflow.id] || {};
 
-    // Count completed stages
+    // Count completed stages (blockchain or local)
     let completed = 0;
     let currentLabel = stageOrder[0].label;
 
     for (let i = 0; i < stageOrder.length; i++) {
       const stageId = stageOrder[i].id;
       const isCommitted = !!workflowCommits[stageId];
-      const isImplied = (stageId === 'structure_preparation' && statusImpliesStructure);
+      const isLocallyCompleted = !!workflowLocalCompletions[stageId];
 
-      if (isCommitted || isImplied) {
+      if (isCommitted || isLocallyCompleted) {
         completed++;
       } else {
         currentLabel = stageOrder[i].label;
@@ -410,7 +413,7 @@ export default function WorkflowsPage() {
               <Box sx={{ 
                 p: 1, 
                 borderRadius: '50%', 
-                bgcolor: '#4CAF50', 
+                bgcolor: '#16a34a', 
                 color: 'white',
                 mr: 2 
               }}>
@@ -445,7 +448,7 @@ export default function WorkflowsPage() {
                 <Box sx={{
                   width: `${progress.progress}%`,
                   height: '100%',
-                  bgcolor: progress.color === 'success' ? '#4CAF50' : progress.color === 'info' ? '#2196F3' : 'grey.400',
+                  bgcolor: progress.color === 'success' ? '#16a34a' : progress.color === 'info' ? '#2196F3' : 'grey.400',
                   transition: 'width 0.3s ease'
                 }} />
               </Box>
