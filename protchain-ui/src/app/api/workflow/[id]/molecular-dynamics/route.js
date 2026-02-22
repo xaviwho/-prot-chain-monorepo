@@ -1,6 +1,36 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import http from 'http';
+
+// Allow up to 10 minutes for long-running MD simulations
+export const maxDuration = 600;
+
+/**
+ * Long-running POST using Node http module to avoid undici headers timeout.
+ */
+function longPost(url, headers, body, timeoutMs = 600000) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || 80,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) },
+      timeout: timeoutMs,
+    };
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, statusText: res.statusMessage, text: () => Promise.resolve(data), json: () => Promise.resolve(JSON.parse(data)) }));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.write(body);
+    req.end();
+  });
+}
 
 export async function POST(request, { params }) {
   try {
@@ -73,19 +103,22 @@ export async function POST(request, { params }) {
     const fetchHeaders = { 'Content-Type': 'application/json' };
     if (authHeader) fetchHeaders['Authorization'] = authHeader;
 
-    const bioApiResponse = await fetch(`${apiUrl}/api/v1/simulation/molecular-dynamics`, {
-      method: 'POST',
-      headers: fetchHeaders,
-      body: JSON.stringify({
-        workflow_id: id,
-        binding_site: bestBindingSite,
-        pdb_content: pdbContent,
-        top_compounds: topCompounds,
-        temperature,
-        n_steps: nSteps,
-        max_compounds: maxCompounds,
-      })
+    const postBody = JSON.stringify({
+      workflow_id: id,
+      binding_site: bestBindingSite,
+      pdb_content: pdbContent,
+      top_compounds: topCompounds,
+      temperature,
+      n_steps: nSteps,
+      max_compounds: maxCompounds,
     });
+
+    // Use Node http module to avoid undici headers timeout on long-running simulation
+    const bioApiResponse = await longPost(
+      `${apiUrl}/api/v1/simulation/molecular-dynamics`,
+      fetchHeaders,
+      postBody
+    );
 
     if (!bioApiResponse.ok) {
       const errorText = await bioApiResponse.text();
