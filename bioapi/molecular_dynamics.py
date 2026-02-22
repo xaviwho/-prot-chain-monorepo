@@ -265,7 +265,7 @@ class MolecularDynamicsEngine:
         # Per-residue average RMSF across all compounds
         residue_rmsf_summary = self._aggregate_residue_rmsf(successful)
 
-        return {
+        result = {
             "status": "success",
             "method": "physics_based_md_simulation",
             "temperature_kelvin": temperature,
@@ -275,8 +275,8 @@ class MolecularDynamicsEngine:
             "compounds_simulated": len(successful),
             "compounds_failed": len(failed),
             "stable_compounds": stable_count,
-            "average_rmsd_angstrom": round(np.mean(all_rmsd), 3) if all_rmsd else 0,
-            "average_interaction_energy_kcal": round(np.mean(all_energies), 3) if all_energies else 0,
+            "average_rmsd_angstrom": round(float(np.mean(all_rmsd)), 3) if all_rmsd else 0,
+            "average_interaction_energy_kcal": round(float(np.mean(all_energies)), 3) if all_energies else 0,
             "compound_results": successful + failed,
             "trajectories": trajectory_data,
             "residue_rmsf_summary": residue_rmsf_summary,
@@ -287,6 +287,7 @@ class MolecularDynamicsEngine:
             },
             "total_computation_time_seconds": total_time,
         }
+        return _sanitize(result)
 
     def _simulate_compound(
         self,
@@ -584,6 +585,27 @@ class MolecularDynamicsEngine:
 
         summary.sort(key=lambda r: r["avg_interaction_energy_kcal"])
         return summary[:15]  # top 15 most interactive residues
+
+
+# ---------------------------------------------------------------------------
+# JSON sanitisation — convert numpy types to native Python
+# ---------------------------------------------------------------------------
+
+def _sanitize(obj):
+    """Recursively convert numpy types to native Python for JSON serialisation."""
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 
 # ---------------------------------------------------------------------------
