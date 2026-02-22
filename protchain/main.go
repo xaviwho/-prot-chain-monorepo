@@ -154,6 +154,11 @@ func main() {
 			screening.POST("/vina-docking", workflowHandler.VinaDocking)
 		}
 
+		simulation := protected.Group("/simulation")
+		{
+			simulation.POST("/molecular-dynamics", workflowHandler.MolecularDynamics)
+		}
+
 		binding := protected.Group("/binding")
 		{
 			binding.POST("/direct-binding-analysis", workflowHandler.DirectBindingAnalysis)

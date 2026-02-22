@@ -20,8 +20,10 @@ import {
   LinearProgress,
   Button,
   CircularProgress,
+  Chip,
+  Alert,
 } from '@mui/material';
-import { ExpandMore, Download, HourglassEmpty, ErrorOutline } from '@mui/icons-material';
+import { ExpandMore, Download, HourglassEmpty, ErrorOutline, CheckCircle, Warning, Error as ErrorIcon } from '@mui/icons-material';
 import { saveAs } from 'file-saver';
 // Import 3D viewers
 import ProteinViewer3D from './ProteinViewer3D';
@@ -406,6 +408,65 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
             num(c.x, 2), num(c.y, 2), num(c.z, 2),
             site.residues?.length || 0,
             esc(residueList || 'N/A'),
+          ].map(v => typeof v === 'string' && v.startsWith('"') ? v : esc(v)).join(',');
+        });
+
+        csvContent = meta.join('\n') + '\n' + header.map(h => esc(h)).join(',') + '\n' + rows.join('\n');
+
+      } else if (stage === 'molecular_dynamics') {
+        // ── Molecular Dynamics: compound stability results ──
+        const mdData = results.molecular_dynamics || results;
+        const compResults = mdData.compound_results || [];
+        const successful = compResults.filter(c => c.status !== 'failed');
+
+        if (successful.length === 0) {
+          alert('No molecular dynamics data available for export');
+          return;
+        }
+
+        const meta = [
+          `"Workflow ID","${params.id}"`,
+          `"Analysis Stage","Molecular Dynamics Simulation"`,
+          `"Generated On","${new Date().toISOString()}"`,
+          `"Method","${(mdData.method || 'physics_based_md_simulation').replace(/_/g, ' ')}"`,
+          `"Temperature","${mdData.temperature_kelvin || 300} K"`,
+          `"Simulation Steps","${mdData.simulation_steps || 'N/A'}"`,
+          `"Simulation Time","${mdData.simulation_time_ns || 'N/A'} ns"`,
+          `"Compounds Simulated","${mdData.compounds_simulated || successful.length}"`,
+          `"Stable Compounds","${mdData.stable_compounds || 0}"`,
+          `"Average RMSD","${num(mdData.average_rmsd_angstrom)} A"`,
+          `"Average Interaction Energy","${num(mdData.average_interaction_energy_kcal)} kcal/mol"`,
+          `"Computation Time","${num(mdData.total_computation_time_seconds, 1)} seconds"`,
+          '',
+        ];
+
+        const header = [
+          'Rank', 'Name', 'SMILES', 'Category', 'Stability Verdict',
+          'RMSD (A)', 'Interaction Energy (kcal/mol)', 'Energy Change (kcal/mol)',
+          'Radius of Gyration (A)', 'VDW Energy', 'Electrostatic Energy',
+          'H-Bond Energy', 'Vina Score (kcal/mol)', 'Molecular Weight',
+          'Top Interacting Residues',
+        ];
+
+        const rows = successful.map((c, i) => {
+          const eb = c.energy_breakdown || {};
+          const topRes = (c.residue_interactions || []).slice(0, 5).map(r => r.residue).join('; ');
+          return [
+            c.rank || i + 1,
+            esc(c.name),
+            esc(c.smiles),
+            esc((c.category || '').replace(/_/g, ' ')),
+            esc((c.stability_verdict || 'unknown').replace(/_/g, ' ')),
+            num(c.rmsd_angstrom, 4),
+            num(c.interaction_energy_kcal, 2),
+            num(c.energy_change_kcal, 2),
+            num(c.radius_of_gyration_angstrom, 3),
+            num(eb.van_der_waals_kcal, 2),
+            num(eb.electrostatic_kcal, 2),
+            num(eb.hydrogen_bond_kcal, 2),
+            c.vina_score_kcal != null ? num(c.vina_score_kcal, 2) : 'N/A',
+            num(c.molecular_weight, 2),
+            esc(topRes || 'N/A'),
           ].map(v => typeof v === 'string' && v.startsWith('"') ? v : esc(v)).join(',');
         });
 
@@ -1266,45 +1327,416 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
     );
   };
 
-  const renderMDResults = (data) => (
-    <Box>
-      <Typography variant="h6" gutterBottom>
-        Molecular Dynamics Results
-      </Typography>
-      <Typography variant="subtitle1" gutterBottom>
-        Simulation Summary
-      </Typography>
-      <TableContainer component={Paper} sx={{ mb: 3 }}>
-        <Table size="small">
-          <TableBody>
-            <TableRow>
-              <TableCell>Duration</TableCell>
-              <TableCell>{data.duration} ns</TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell>Temperature</TableCell>
-              <TableCell>{data.temperature} K</TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell>RMSD</TableCell>
-              <TableCell>{data.rmsd.toFixed(2)} Å</TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </TableContainer>
+  const renderMDResults = (data) => {
+    const compoundResults = data.compound_results || [];
+    const successful = compoundResults.filter(c => c.status !== 'failed');
+    const trajectories = data.trajectories || [];
 
-      {data.trajectories.map((traj, index) => (
-        <Accordion key={index}>
-          <AccordionSummary expandIcon={<ExpandMore />}>
-            <Typography>Trajectory {index + 1}</Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Typography>Trajectory visualization will be available here</Typography>
-          </AccordionDetails>
-        </Accordion>
-      ))}
-    </Box>
-  );
+    const stabilityColor = (verdict) => {
+      switch (verdict) {
+        case 'stable': return 'success';
+        case 'moderately_stable': return 'warning';
+        case 'unstable': return 'error';
+        default: return 'default';
+      }
+    };
+
+    const stabilityIcon = (verdict) => {
+      switch (verdict) {
+        case 'stable': return <CheckCircle fontSize="small" />;
+        case 'moderately_stable': return <Warning fontSize="small" />;
+        case 'unstable': return <ErrorIcon fontSize="small" />;
+        default: return null;
+      }
+    };
+
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6">
+            Molecular Dynamics Simulation Results
+          </Typography>
+          <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>
+            Download Results
+          </Button>
+        </Box>
+
+        {/* Simulation Summary */}
+        <Paper sx={{ p: 2, mb: 3, backgroundColor: '#f8fafc' }}>
+          <Typography variant="subtitle1" gutterBottom>Simulation Parameters</Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Temperature</Typography>
+              <Typography variant="body1" fontWeight="bold">{data.temperature_kelvin || 300} K</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Simulation Time</Typography>
+              <Typography variant="body1" fontWeight="bold">{data.simulation_time_ns || '—'} ns</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Steps</Typography>
+              <Typography variant="body1" fontWeight="bold">{(data.simulation_steps || 0).toLocaleString()}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Timestep</Typography>
+              <Typography variant="body1" fontWeight="bold">{data.timestep_ps || 0.002} ps</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Compounds Simulated</Typography>
+              <Typography variant="body1" fontWeight="bold">{data.compounds_simulated || 0}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Stable Compounds</Typography>
+              <Typography variant="body1" fontWeight="bold" color="success.main">{data.stable_compounds || 0}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Avg RMSD</Typography>
+              <Typography variant="body1" fontWeight="bold">{data.average_rmsd_angstrom?.toFixed(2) || '—'} Å</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Avg Interaction Energy</Typography>
+              <Typography variant="body1" fontWeight="bold">{data.average_interaction_energy_kcal?.toFixed(1) || '—'} kcal/mol</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Computation Time</Typography>
+              <Typography variant="body1" fontWeight="bold">{data.total_computation_time_seconds?.toFixed(1) || '—'}s</Typography>
+            </Box>
+          </Box>
+        </Paper>
+
+        {/* Compound Results Table */}
+        <Typography variant="subtitle1" gutterBottom>Compound Stability Rankings</Typography>
+        <TableContainer component={Paper} sx={{ mb: 3 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
+                <TableCell>Rank</TableCell>
+                <TableCell>Compound</TableCell>
+                <TableCell>Stability</TableCell>
+                <TableCell align="right">RMSD (Å)</TableCell>
+                <TableCell align="right">Interaction Energy</TableCell>
+                <TableCell align="right">Energy Change</TableCell>
+                <TableCell align="right">Rg (Å)</TableCell>
+                <TableCell align="right">Vina/Score</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {successful.map((comp, idx) => (
+                <TableRow key={idx} sx={{ '&:hover': { backgroundColor: '#f9f9f9' } }}>
+                  <TableCell>{comp.rank || idx + 1}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight="medium">{comp.name}</Typography>
+                    {comp.category && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {comp.category.replace(/_/g, ' ')}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      icon={stabilityIcon(comp.stability_verdict)}
+                      label={comp.stability_verdict?.replace(/_/g, ' ') || 'unknown'}
+                      size="small"
+                      color={stabilityColor(comp.stability_verdict)}
+                      sx={{ textTransform: 'capitalize' }}
+                    />
+                  </TableCell>
+                  <TableCell align="right">{comp.rmsd_angstrom?.toFixed(2)}</TableCell>
+                  <TableCell align="right">
+                    <Typography
+                      variant="body2"
+                      color={comp.interaction_energy_kcal < -10 ? 'success.main' : comp.interaction_energy_kcal < 0 ? 'text.primary' : 'error.main'}
+                      fontWeight="bold"
+                    >
+                      {comp.interaction_energy_kcal?.toFixed(1)} kcal/mol
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography
+                      variant="body2"
+                      color={comp.energy_change_kcal < 0 ? 'success.main' : 'error.main'}
+                    >
+                      {comp.energy_change_kcal > 0 ? '+' : ''}{comp.energy_change_kcal?.toFixed(1)}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">{comp.radius_of_gyration_angstrom?.toFixed(2)}</TableCell>
+                  <TableCell align="right">
+                    {comp.vina_score_kcal
+                      ? `${comp.vina_score_kcal} kcal/mol`
+                      : comp.predicted_binding_affinity_kcal
+                        ? `${comp.predicted_binding_affinity_kcal} kcal/mol`
+                        : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Energy breakdown per compound (expandable) */}
+        <Typography variant="subtitle1" gutterBottom>Compound Details</Typography>
+        {successful.map((comp, idx) => (
+          <Accordion key={idx}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                <Typography sx={{ flexGrow: 1 }}>{comp.rank || idx + 1}. {comp.name}</Typography>
+                <Chip
+                  label={comp.stability_verdict?.replace(/_/g, ' ')}
+                  size="small"
+                  color={stabilityColor(comp.stability_verdict)}
+                  sx={{ textTransform: 'capitalize' }}
+                />
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {/* Energy Breakdown */}
+                {comp.energy_breakdown && (
+                  <Box sx={{ minWidth: 250 }}>
+                    <Typography variant="subtitle2" gutterBottom>Energy Breakdown</Typography>
+                    <Table size="small">
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>Van der Waals</TableCell>
+                          <TableCell align="right">{comp.energy_breakdown.van_der_waals_kcal?.toFixed(2)} kcal/mol</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Electrostatic</TableCell>
+                          <TableCell align="right">{comp.energy_breakdown.electrostatic_kcal?.toFixed(2)} kcal/mol</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Hydrogen Bond</TableCell>
+                          <TableCell align="right">{comp.energy_breakdown.hydrogen_bond_kcal?.toFixed(2)} kcal/mol</TableCell>
+                        </TableRow>
+                        <TableRow sx={{ fontWeight: 'bold' }}>
+                          <TableCell><strong>Total</strong></TableCell>
+                          <TableCell align="right"><strong>{comp.energy_breakdown.total_kcal?.toFixed(2)} kcal/mol</strong></TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </Box>
+                )}
+
+                {/* Key Residue Interactions */}
+                {comp.residue_interactions && comp.residue_interactions.length > 0 && (
+                  <Box sx={{ minWidth: 300 }}>
+                    <Typography variant="subtitle2" gutterBottom>Top Interacting Residues</Typography>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Residue</TableCell>
+                          <TableCell align="right">Energy</TableCell>
+                          <TableCell align="right">Distance</TableCell>
+                          <TableCell align="right">Contacts</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {comp.residue_interactions.slice(0, 5).map((res, ri) => (
+                          <TableRow key={ri}>
+                            <TableCell>{res.residue}</TableCell>
+                            <TableCell align="right">{res.interaction_energy_kcal?.toFixed(1)}</TableCell>
+                            <TableCell align="right">{res.min_distance_angstrom?.toFixed(1)} Å</TableCell>
+                            <TableCell align="right">{res.n_contacts}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                )}
+
+                {/* SMILES */}
+                {comp.smiles && (
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>SMILES</Typography>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {comp.smiles}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </AccordionDetails>
+          </Accordion>
+        ))}
+
+        {/* Trajectory Energy Convergence */}
+        {trajectories.length > 0 && (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>Energy Convergence</Typography>
+            {trajectories.map((traj, idx) => (
+              <Accordion key={idx}>
+                <AccordionSummary expandIcon={<ExpandMore />}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <Typography sx={{ flexGrow: 1 }}>{traj.compound_name}</Typography>
+                    <Chip
+                      label={traj.converged ? 'Converged' : 'Not converged'}
+                      size="small"
+                      color={traj.converged ? 'success' : 'warning'}
+                    />
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {/* Snapshots table */}
+                    {traj.snapshots && traj.snapshots.length > 0 && (
+                      <Box sx={{ minWidth: 350 }}>
+                        <Typography variant="subtitle2" gutterBottom>Trajectory Snapshots</Typography>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Step</TableCell>
+                              <TableCell>Time (ps)</TableCell>
+                              <TableCell align="right">Energy (kcal/mol)</TableCell>
+                              <TableCell align="right">RMSD (Å)</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {traj.snapshots.map((snap, si) => (
+                              <TableRow key={si}>
+                                <TableCell>{snap.step}</TableCell>
+                                <TableCell>{snap.time_ps}</TableCell>
+                                <TableCell align="right">{snap.energy_kcal?.toFixed(1)}</TableCell>
+                                <TableCell align="right">{snap.rmsd_angstrom?.toFixed(3)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </Box>
+                    )}
+
+                    {/* Simple energy progress bar */}
+                    {traj.energy_series && traj.energy_series.length > 1 && (
+                      <Box sx={{ minWidth: 250 }}>
+                        <Typography variant="subtitle2" gutterBottom>Energy Profile</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Initial: {traj.energy_series[0]?.toFixed(1)} kcal/mol
+                        </Typography>
+                        <br />
+                        <Typography variant="caption" color="text.secondary">
+                          Final: {traj.energy_series[traj.energy_series.length - 1]?.toFixed(1)} kcal/mol
+                        </Typography>
+                        <br />
+                        <Typography variant="caption" color={
+                          traj.energy_series[traj.energy_series.length - 1] < traj.energy_series[0] ? 'success.main' : 'error.main'
+                        }>
+                          Change: {(traj.energy_series[traj.energy_series.length - 1] - traj.energy_series[0]).toFixed(1)} kcal/mol
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                </AccordionDetails>
+              </Accordion>
+            ))}
+          </Box>
+        )}
+
+        {/* Residue RMSF Summary */}
+        {data.residue_rmsf_summary && data.residue_rmsf_summary.length > 0 && (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>Key Binding Pocket Residues</Typography>
+            <TableContainer component={Paper}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
+                    <TableCell>Residue</TableCell>
+                    <TableCell align="right">Avg Interaction Energy</TableCell>
+                    <TableCell align="right">Avg Min Distance</TableCell>
+                    <TableCell align="right">Total Contacts</TableCell>
+                    <TableCell align="right">Compounds Interacting</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {data.residue_rmsf_summary.map((res, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>{res.residue}</TableCell>
+                      <TableCell align="right">{res.avg_interaction_energy_kcal?.toFixed(2)} kcal/mol</TableCell>
+                      <TableCell align="right">{res.avg_min_distance_angstrom?.toFixed(1)} Å</TableCell>
+                      <TableCell align="right">{res.total_contacts}</TableCell>
+                      <TableCell align="right">{res.compounds_interacting}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+        )}
+
+        {/* Blockchain commit & proceed buttons */}
+        <Paper sx={{ p: 3, mt: 3, border: '1px solid #e0e0e0' }}>
+          <Typography variant="subtitle1" gutterBottom>
+            Commit Results
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Commit your molecular dynamics results to blockchain for permanent provenance and integrity verification.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            {!blockchainCommitted ? (
+              <>
+                <Button
+                  variant="contained"
+                  onClick={commitToBlockchain}
+                  disabled={commitLoading}
+                  sx={{
+                    background: 'linear-gradient(45deg, #2E7D32 30%, #388E3C 90%)',
+                    color: 'white',
+                    '&:hover': { background: 'linear-gradient(45deg, #1B5E20 30%, #2E7D32 90%)' },
+                  }}
+                >
+                  {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
+                </Button>
+                {onProceedWithoutCommitting && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => onProceedWithoutCommitting(stage, results)}
+                    sx={{
+                      borderColor: '#FF9800', color: '#FF9800',
+                      '&:hover': { borderColor: '#F57C00', backgroundColor: 'rgba(255, 152, 0, 0.08)' },
+                    }}
+                  >
+                    Proceed Without Committing
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button
+                variant="contained"
+                color="info"
+                onClick={verifyResults}
+                disabled={verifyLoading}
+                sx={{
+                  background: 'linear-gradient(45deg, #00BCD4 30%, #009688 90%)',
+                  color: 'white',
+                  '&:hover': { background: 'linear-gradient(45deg, #0097A7 30%, #00796B 90%)' },
+                }}
+              >
+                {verifyLoading ? <CircularProgress size={24} /> : 'Verify'}
+              </Button>
+            )}
+          </Box>
+
+          {blockchainCommitted && ipfsHash && blockchainTxHash && (
+            <Paper sx={{ p: 2, mt: 2, backgroundColor: 'rgba(46, 125, 50, 0.05)', border: '1px solid rgba(46, 125, 50, 0.2)' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
+                Blockchain & IPFS Records
+              </Typography>
+              <Box sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                <Typography variant="body2"><strong>IPFS Hash:</strong> {ipfsHash}</Typography>
+                <Typography variant="body2"><strong>Blockchain Tx:</strong> {blockchainTxHash}</Typography>
+              </Box>
+            </Paper>
+          )}
+
+          {verificationResult && (
+            <Box sx={{ mt: 2, p: 2, backgroundColor: verificationResult.verified ? 'rgba(46, 125, 50, 0.1)' : 'rgba(255, 167, 38, 0.1)', borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold', color: verificationResult.verified ? 'success.main' : 'warning.main' }}>
+                {verificationResult.verified ? '✅ Verification Successful' : '⚠️ Verification Failed'}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>{verificationResult.message}</Typography>
+            </Box>
+          )}
+        </Paper>
+      </Box>
+    );
+  };
 
   const renderOptimizationResults = (data) => (
     <Box>

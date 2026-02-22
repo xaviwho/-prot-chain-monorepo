@@ -14,6 +14,7 @@ from literature_search import get_searcher
 from virtual_screening import get_screener
 from compound_parser import parse_csv, parse_sdf
 from molecular_docking import get_docking_engine
+from molecular_dynamics import get_md_engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -402,6 +403,51 @@ async def vina_docking(request: VinaDockingRequest):
     except Exception as e:
         logger.error(f"Vina docking error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Vina docking failed: {str(e)}")
+
+
+# --- Molecular Dynamics Simulation ---
+
+class MDSimulationRequest(BaseModel):
+    workflow_id: Optional[str] = None
+    binding_site: Dict[str, Any]
+    pdb_content: str
+    top_compounds: List[Dict[str, Any]]
+    temperature: Optional[float] = 300.0
+    n_steps: Optional[int] = 5000
+    max_compounds: Optional[int] = 10
+
+@app.post("/api/v1/simulation/molecular-dynamics")
+async def molecular_dynamics(request: MDSimulationRequest):
+    """Run molecular dynamics stability simulation for top compounds."""
+    try:
+        if not request.binding_site:
+            raise HTTPException(status_code=400, detail="binding_site is required")
+        if not request.pdb_content:
+            raise HTTPException(status_code=400, detail="pdb_content (PDB file content) is required")
+        if not request.top_compounds:
+            raise HTTPException(status_code=400, detail="top_compounds list is required")
+
+        engine = get_md_engine()
+        results = engine.simulate(
+            pdb_content=request.pdb_content,
+            binding_site=request.binding_site,
+            top_compounds=request.top_compounds,
+            temperature=request.temperature or 300.0,
+            n_steps=request.n_steps or 5000,
+            max_compounds=request.max_compounds or 10,
+        )
+
+        logger.info(
+            f"MD simulation completed: {results['compounds_simulated']} compounds, "
+            f"{results['stable_compounds']} stable in {results['total_computation_time_seconds']}s"
+        )
+        return AnalysisResponse(success=True, data=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"MD simulation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"MD simulation failed: {str(e)}")
 
 
 if __name__ == "__main__":

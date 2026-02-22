@@ -924,6 +924,46 @@ func (h *WorkflowHandler) VinaDocking(c *gin.Context) {
 	c.JSON(resp.StatusCode, result)
 }
 
+// MolecularDynamics proxies MD simulation requests to BioAPI
+func (h *WorkflowHandler) MolecularDynamics(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Success: false, Error: "Failed to read request body"})
+		return
+	}
+
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/simulation/molecular-dynamics", bioapiURL)
+	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("BioAPI MD simulation request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to connect to MD simulation service: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to read MD simulation response"})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse MD simulation response"})
+		return
+	}
+
+	c.JSON(resp.StatusCode, result)
+}
+
 // AIDruggabilityScore proxies ML druggability scoring to BioAPI
 func (h *WorkflowHandler) AIDruggabilityScore(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)

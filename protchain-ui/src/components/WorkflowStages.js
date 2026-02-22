@@ -34,6 +34,7 @@ export default function WorkflowStages({
   onStructureAnalysisComplete,
   onBindingSiteAnalysisComplete,
   onVirtualScreeningComplete,
+  onMolecularDynamicsComplete,
   onStageClick,
 }) {
   const [pdbId, setPdbId] = useState('');
@@ -55,6 +56,10 @@ export default function WorkflowStages({
   // Molecule range selection for large compound libraries
   const [rangeStart, setRangeStart] = useState(1);
   const [rangeEnd, setRangeEnd] = useState(500);
+  // MD simulation parameters
+  const [mdTemperature, setMdTemperature] = useState(300);
+  const [mdSteps, setMdSteps] = useState(5000);
+  const [mdMaxCompounds, setMdMaxCompounds] = useState(10);
 
   // Fetch workflow state on component mount and when workflowId changes
   useEffect(() => {
@@ -455,6 +460,62 @@ export default function WorkflowStages({
     }
   };
 
+  const handleMolecularDynamics = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(`/api/workflow/${workflowId}/molecular-dynamics`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          temperature: mdTemperature,
+          n_steps: mdSteps,
+          max_compounds: mdMaxCompounds,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `MD simulation failed: ${response.statusText}`);
+      }
+
+      const results = await response.json();
+
+      setSuccess(
+        `Molecular dynamics completed! ${results.compounds_simulated || 0} compounds simulated, ` +
+        `${results.stable_compounds || 0} stable.`
+      );
+      setCompletedStages(prev => new Set([...prev, 'molecular_dynamics']));
+
+      if (onMolecularDynamicsComplete) {
+        onMolecularDynamicsComplete(results);
+      }
+
+      // Refresh workflow state
+      try {
+        const workflowResponse = await fetch(`/api/v1/workflows/${workflowId}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (workflowResponse.ok) {
+          const updatedWorkflowData = await workflowResponse.json();
+          setWorkflowData(updatedWorkflowData);
+          if (updatedWorkflowData.completed_stages) {
+            setCompletedStages(new Set(updatedWorkflowData.completed_stages));
+          }
+        }
+      } catch (refreshError) {}
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleStageAction = async (stageId) => {
     switch (stageId) {
       case 'structure_preparation':
@@ -467,6 +528,8 @@ export default function WorkflowStages({
         await handleVirtualScreening();
         break;
       case 'molecular_dynamics':
+        await handleMolecularDynamics();
+        break;
       case 'lead_optimization':
         setError(`${stages.find(s => s.id === stageId)?.title} is not yet implemented`);
         break;
@@ -768,6 +831,50 @@ export default function WorkflowStages({
               </Box>
             )}
             
+            {/* MD simulation parameters */}
+            {stage.id === 'molecular_dynamics' && isActive && !isDone && (
+              <Box sx={{ mb: 2 }}>
+                <Alert severity="info" sx={{ mb: 2, py: 0 }}>
+                  <Typography variant="caption">
+                    Runs energy minimisation &amp; stability analysis on top compounds from virtual screening.
+                    Uses Lennard-Jones, Coulomb, and H-bond potentials.
+                  </Typography>
+                </Alert>
+                <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                  <TextField
+                    label="Temperature (K)"
+                    type="number"
+                    value={mdTemperature}
+                    onChange={(e) => setMdTemperature(Number(e.target.value))}
+                    size="small"
+                    sx={{ flex: 1 }}
+                    inputProps={{ min: 200, max: 500 }}
+                    disabled={loading}
+                  />
+                  <TextField
+                    label="Steps"
+                    type="number"
+                    value={mdSteps}
+                    onChange={(e) => setMdSteps(Number(e.target.value))}
+                    size="small"
+                    sx={{ flex: 1 }}
+                    inputProps={{ min: 1000, max: 50000, step: 1000 }}
+                    disabled={loading}
+                  />
+                  <TextField
+                    label="Max Compounds"
+                    type="number"
+                    value={mdMaxCompounds}
+                    onChange={(e) => setMdMaxCompounds(Number(e.target.value))}
+                    size="small"
+                    sx={{ flex: 1 }}
+                    inputProps={{ min: 1, max: 50 }}
+                    disabled={loading}
+                  />
+                </Box>
+              </Box>
+            )}
+
             {stage.id === 'structure_preparation' && isActive && !isDone && (
               <Box sx={{ mb: 2 }}>
                 <TextField

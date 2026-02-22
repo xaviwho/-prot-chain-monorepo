@@ -66,12 +66,6 @@ export async function GET(request, { params }) {
           results: response.data.results || null
         });
       } catch (bioApiError) {
-          message: bioApiError.message,
-          status: bioApiError.response?.status,
-          statusText: bioApiError.response?.statusText,
-          url: `${apiUrl}/api/v1/structure/workflows/${bioApiWorkflowId}/status`
-        });
-        
         // Fall back to local file checking if bioapi is unavailable
       }
     }

@@ -192,6 +192,14 @@ export default function WorkflowDetailPage() {
     setActiveTab(1); // Switch to results tab
   };
 
+  const handleMolecularDynamicsComplete = (mdResults) => {
+    const merged = { ...results, molecular_dynamics: mdResults };
+    setResults(merged);
+    setStage('molecular_dynamics');
+    cacheStageResults('molecular_dynamics', merged);
+    setActiveTab(1); // Switch to results tab
+  };
+
   const handleStageClick = (stageId) => {
     // Load cached results for the clicked stage and switch to Results tab
     try {
@@ -370,6 +378,7 @@ export default function WorkflowDetailPage() {
             onStructureAnalysisComplete={handleStructureAnalysisComplete}
             onBindingSiteAnalysisComplete={handleBindingSiteAnalysisComplete}
             onVirtualScreeningComplete={handleVirtualScreeningComplete}
+            onMolecularDynamicsComplete={handleMolecularDynamicsComplete}
             onStageClick={handleStageClick}
           />
         </TabPanel>
