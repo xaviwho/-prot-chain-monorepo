@@ -39,32 +39,65 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const MAX_FILE_SIZE = 500 * 1024; // 500KB
+  const MAX_FILE_SIZE_TEXT = 500 * 1024; // 500KB for text files
+  const MAX_FILE_SIZE_BINARY = 2 * 1024 * 1024; // 2MB for images/PDFs
+
+  // File types that should be read as binary (base64)
+  const BINARY_EXTENSIONS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
 
   const handleFileSelect = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_FILE_SIZE) {
-      // Read anyway but will truncate
+    const ext = file.name.split('.').pop().toLowerCase();
+    const isBinary = BINARY_EXTENSIONS.has(ext);
+    const maxSize = isBinary ? MAX_FILE_SIZE_BINARY : MAX_FILE_SIZE_TEXT;
+
+    if (file.size > maxSize) {
+      setAttachedFile({
+        name: file.name,
+        content: null,
+        type: ext,
+        truncated: false,
+        error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max ${isBinary ? '2MB' : '500KB'} for ${isBinary ? 'binary' : 'text'} files.`,
+      });
+      event.target.value = '';
+      return;
     }
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      let content = e.target.result;
-      const truncated = content.length > MAX_FILE_SIZE;
-      if (truncated) {
-        content = content.slice(0, MAX_FILE_SIZE);
+      if (isBinary) {
+        // Store as base64 data URL for binary files
+        setAttachedFile({
+          name: file.name,
+          content: e.target.result, // data:mime;base64,...
+          type: ext,
+          truncated: false,
+          isBinary: true,
+          mimeType: file.type,
+        });
+      } else {
+        let content = e.target.result;
+        const truncated = content.length > MAX_FILE_SIZE_TEXT;
+        if (truncated) {
+          content = content.slice(0, MAX_FILE_SIZE_TEXT);
+        }
+        setAttachedFile({
+          name: file.name,
+          content,
+          type: ext,
+          truncated,
+          isBinary: false,
+        });
       }
-      setAttachedFile({
-        name: file.name,
-        content,
-        type: file.name.split('.').pop().toLowerCase(),
-        truncated,
-      });
     };
-    reader.readAsText(file);
-    // Reset so the same file can be re-selected
+
+    if (isBinary) {
+      reader.readAsDataURL(file);
+    } else {
+      reader.readAsText(file);
+    }
     event.target.value = '';
   };
 
@@ -141,11 +174,13 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
         history: messages,
         workflowContext: prepareContext(),
       };
-      if (currentFile) {
+      if (currentFile && currentFile.content) {
         payload.fileContext = {
           name: currentFile.name,
           content: currentFile.content,
           type: currentFile.type,
+          isBinary: currentFile.isBinary || false,
+          mimeType: currentFile.mimeType || null,
         };
       }
 
@@ -386,10 +421,13 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
           <Box sx={{ mb: 1 }}>
             <Chip
               icon={<AttachFile sx={{ fontSize: 16 }} />}
-              label={attachedFile.truncated ? `${attachedFile.name} (truncated)` : attachedFile.name}
+              label={attachedFile.error ? `${attachedFile.name} — ${attachedFile.error}` :
+                     attachedFile.truncated ? `${attachedFile.name} (truncated)` :
+                     attachedFile.isBinary ? `${attachedFile.name} (${attachedFile.type.toUpperCase()})` :
+                     attachedFile.name}
               onDelete={() => setAttachedFile(null)}
               size="small"
-              color="primary"
+              color={attachedFile.error ? 'error' : 'primary'}
               variant="outlined"
               sx={{ maxWidth: '100%' }}
             />
@@ -400,7 +438,7 @@ export default function AIChatPanel({ open, onClose, workflowId, workflowResults
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json,.csv,.txt,.pdb,.sdf,.mol2"
+            accept=".json,.csv,.txt,.pdb,.sdf,.mol2,.mol,.pdbqt,.smiles,.smi,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif"
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />

@@ -76,13 +76,24 @@ export async function POST(request) {
       contextBlock = contextParts.join('\n');
     }
 
-    // Append uploaded file content if present
-    if (fileContext && fileContext.content) {
+    // Determine if file is an image (for Claude vision API)
+    const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+    const isImageFile = fileContext && IMAGE_EXTENSIONS.has(fileContext.type);
+    const isBinaryFile = fileContext && fileContext.isBinary && !isImageFile;
+
+    // Append uploaded file content if present (text-based files)
+    if (fileContext && fileContext.content && !fileContext.isBinary) {
       let fileContent = fileContext.content;
       if (fileContent.length > 50000) {
         fileContent = fileContent.slice(0, 50000) + '\n... (file content truncated)';
       }
       contextBlock += `\n\n--- Uploaded File: ${fileContext.name || 'unknown'} (${fileContext.type || 'txt'}) ---\n${fileContent}`;
+    }
+
+    // For binary non-image files (PDF, Word, Excel), note the attachment metadata
+    if (isBinaryFile) {
+      contextBlock += `\n\n--- Uploaded File: ${fileContext.name || 'unknown'} (${fileContext.type?.toUpperCase() || 'binary'}) ---\n`;
+      contextBlock += `[Binary file attached. File type: ${fileContext.type}. The user may be asking about this file's contents or requesting analysis.]`;
     }
 
     // Hard cap total context at 100K chars
@@ -102,21 +113,64 @@ export async function POST(request) {
     }
 
     // Add current user message with context
-    const userContent = contextBlock
-      ? `[Current Workflow Context]\n${contextBlock}\n\n[User Question]\n${message}`
-      : message;
+    // For image files, use Claude's multimodal content blocks
+    if (isImageFile && fileContext.content) {
+      // Extract base64 data from data URL (e.g., "data:image/png;base64,iVBOR...")
+      const base64Match = fileContext.content.match(/^data:([^;]+);base64,(.+)$/);
+      const mediaType = base64Match?.[1] || fileContext.mimeType || `image/${fileContext.type}`;
+      const base64Data = base64Match?.[2] || fileContext.content;
 
-    messages.push({
-      role: 'user',
-      content: userContent,
-    });
+      const contentBlocks = [];
+      if (contextBlock) {
+        contentBlocks.push({ type: 'text', text: `[Current Workflow Context]\n${contextBlock}\n\n[User Question]\n${message}` });
+      } else {
+        contentBlocks.push({ type: 'text', text: message });
+      }
+      contentBlocks.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: mediaType,
+          data: base64Data,
+        },
+      });
+      contentBlocks.push({ type: 'text', text: `[Attached image: ${fileContext.name}]` });
+
+      messages.push({ role: 'user', content: contentBlocks });
+    } else if (isBinaryFile && fileContext.content && fileContext.type === 'pdf') {
+      // Send PDF as document content block (Claude supports PDF via base64)
+      const base64Match = fileContext.content.match(/^data:([^;]+);base64,(.+)$/);
+      const base64Data = base64Match?.[2] || fileContext.content;
+
+      const contentBlocks = [];
+      if (contextBlock) {
+        contentBlocks.push({ type: 'text', text: `[Current Workflow Context]\n${contextBlock}\n\n[User Question]\n${message}` });
+      } else {
+        contentBlocks.push({ type: 'text', text: message });
+      }
+      contentBlocks.push({
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'application/pdf',
+          data: base64Data,
+        },
+      });
+
+      messages.push({ role: 'user', content: contentBlocks });
+    } else {
+      const userContent = contextBlock
+        ? `[Current Workflow Context]\n${contextBlock}\n\n[User Question]\n${message}`
+        : message;
+      messages.push({ role: 'user', content: userContent });
+    }
 
     // Call Claude API
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: fileContext ? 2048 : 1024,
+      max_tokens: (isImageFile || isBinaryFile) ? 4096 : fileContext ? 2048 : 1024,
       system: SYSTEM_PROMPT,
       messages: messages,
     });
