@@ -858,7 +858,10 @@ func (h *WorkflowHandler) VirtualScreening(c *gin.Context) {
 	}
 
 	endpoint := fmt.Sprintf("%s/api/v1/screening/virtual-screening", bioapiURL)
-	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+
+	// Large compound libraries (10k+) can take 20-30 minutes; use a long-timeout client
+	longClient := &http.Client{Timeout: 30 * time.Minute}
+	resp, err := longClient.Post(endpoint, "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		log.Printf("BioAPI virtual screening request failed: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
@@ -898,7 +901,10 @@ func (h *WorkflowHandler) VinaDocking(c *gin.Context) {
 	}
 
 	endpoint := fmt.Sprintf("%s/api/v1/screening/vina-docking", bioapiURL)
-	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+
+	// Vina docking with large libraries can take 20-30 minutes; use a long-timeout client
+	longClient := &http.Client{Timeout: 30 * time.Minute}
+	resp, err := longClient.Post(endpoint, "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		log.Printf("BioAPI Vina docking request failed: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
@@ -938,7 +944,10 @@ func (h *WorkflowHandler) MolecularDynamics(c *gin.Context) {
 	}
 
 	endpoint := fmt.Sprintf("%s/api/v1/simulation/molecular-dynamics", bioapiURL)
-	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+
+	// MD simulations can run 20-30 minutes with OpenMM; use a long-timeout client
+	longClient := &http.Client{Timeout: 30 * time.Minute}
+	resp, err := longClient.Post(endpoint, "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		log.Printf("BioAPI MD simulation request failed: %v", err)
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
@@ -958,6 +967,46 @@ func (h *WorkflowHandler) MolecularDynamics(c *gin.Context) {
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse MD simulation response"})
+		return
+	}
+
+	c.JSON(resp.StatusCode, result)
+}
+
+// LeadOptimization proxies lead optimization requests to BioAPI
+func (h *WorkflowHandler) LeadOptimization(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Success: false, Error: "Failed to read request body"})
+		return
+	}
+
+	bioapiURL := os.Getenv("BIOAPI_URL")
+	if bioapiURL == "" {
+		bioapiURL = "http://localhost:8000"
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/optimization/lead-optimization", bioapiURL)
+	resp, err := http.Post(endpoint, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("BioAPI lead optimization request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Success: false,
+			Error:   "Failed to connect to lead optimization service: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to read lead optimization response"})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Success: false, Error: "Failed to parse lead optimization response"})
 		return
 	}
 

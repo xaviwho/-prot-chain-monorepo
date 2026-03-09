@@ -77,16 +77,16 @@ IPFS_ADDRESS="/ip4/0.0.0.0/tcp/5001"
 JWT_KEY="your-jwt-secret"
 
 # PureChain Configuration
-PURECHAIN_RPC_URL="https://purechainnode.com:8547"
+PURECHAIN_RPC_URL="https://purechainnode.com"
 PURECHAIN_ID="900520900520"
 
 # Smart Contract Addresses
-WORKFLOW_CONTRACT_ADDRESS="0x08Ee1819412dd761119B1e0B7C91122125FdB04a"
+WORKFLOW_CONTRACT_ADDRESS="0xAA3DFc054293Dd3731892A1Ba0366D6e6FB1Ee51"
 SIGNER_PRIVATE_KEY="your-private-key"
 
 # protchain-ui/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
-WORKFLOW_TRACKER_ADDRESS=0x08Ee1819412dd761119B1e0B7C91122125FdB04a
+WORKFLOW_TRACKER_ADDRESS=0xAA3DFc054293Dd3731892A1Ba0366D6e6FB1Ee51
 PRIVATE_KEY=your-private-key
 ```
 
@@ -230,9 +230,9 @@ python -m pytest
 
 ### PureChain Network
 
-- **RPC URL**: https://purechainnode.com:8547
+- **RPC URL**: https://purechainnode.com
 - **Chain ID**: 900520900520
-- **Smart Contract**: WorkflowTracker at `0x08Ee1819412dd761119B1e0B7C91122125FdB04a`
+- **Smart Contract**: WorkflowTracker at `0xAA3DFc054293Dd3731892A1Ba0366D6e6FB1Ee51`
 
 ### Smart Contract Functions
 

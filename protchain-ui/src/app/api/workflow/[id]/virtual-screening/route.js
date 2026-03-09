@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import { commitStageToBlockchain } from '../../../../../utils/blockchainCommit';
 
-// Allow up to 10 minutes for long-running docking jobs
-export const maxDuration = 600;
+// Allow up to 30 minutes for large compound libraries (10k+)
+export const maxDuration = 1800;
 
 /**
  * Long-running POST using Node http module to avoid undici headers timeout.
  */
-function longPost(url, headers, body, timeoutMs = 600000) {
+function longPost(url, headers, body, timeoutMs = 1800000) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const options = {
@@ -187,6 +188,11 @@ export async function POST(request, { params }) {
       // Non-fatal — we still return the results
     }
 
+    // Automatic blockchain commit (non-fatal)
+    const blockchainResult = await commitStageToBlockchain(
+      id, 'virtual_screening', screeningData, request
+    );
+
     // Return virtual screening results
     return NextResponse.json({
       status: 'success',
@@ -206,6 +212,8 @@ export async function POST(request, { params }) {
       total_docking_time_seconds: screeningData.total_docking_time_seconds,
       docking_failures: screeningData.docking_failures,
       exhaustiveness: screeningData.exhaustiveness,
+      ligand_preparation: screeningData.ligand_preparation,
+      blockchain: blockchainResult,
     });
 
   } catch (error) {

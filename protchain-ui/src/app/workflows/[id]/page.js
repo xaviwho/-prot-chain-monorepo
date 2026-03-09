@@ -200,6 +200,14 @@ export default function WorkflowDetailPage() {
     setActiveTab(1); // Switch to results tab
   };
 
+  const handleLeadOptimizationComplete = (loResults) => {
+    const merged = { ...results, lead_optimization: loResults };
+    setResults(merged);
+    setStage('lead_optimization');
+    cacheStageResults('lead_optimization', merged);
+    setActiveTab(1); // Switch to results tab
+  };
+
   const handleStageClick = (stageId) => {
     // Load cached results for the clicked stage and switch to Results tab
     try {
@@ -213,27 +221,6 @@ export default function WorkflowDetailPage() {
     } catch (e) {
       // Ignore
     }
-  };
-
-  const handleProceedWithoutCommitting = (currentStage, currentResults) => {
-    // Save results to localStorage cache
-    cacheStageResults(currentStage, currentResults);
-
-    // Mark stage as locally completed
-    try {
-      const completions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
-      if (!completions[params.id]) completions[params.id] = {};
-      completions[params.id][currentStage] = {
-        timestamp: new Date().toISOString(),
-        stage: currentStage
-      };
-      localStorage.setItem('stageCompletions', JSON.stringify(completions));
-    } catch (e) {
-      // Ignore
-    }
-
-    // Switch back to Pipeline tab so the user sees the next stage unlocked
-    setActiveTab(0);
   };
 
   if (loading) {
@@ -379,6 +366,7 @@ export default function WorkflowDetailPage() {
             onBindingSiteAnalysisComplete={handleBindingSiteAnalysisComplete}
             onVirtualScreeningComplete={handleVirtualScreeningComplete}
             onMolecularDynamicsComplete={handleMolecularDynamicsComplete}
+            onLeadOptimizationComplete={handleLeadOptimizationComplete}
             onStageClick={handleStageClick}
           />
         </TabPanel>
@@ -390,7 +378,10 @@ export default function WorkflowDetailPage() {
               results={results}
               stage={stage}
               workflow={workflow}
-              onProceedWithoutCommitting={handleProceedWithoutCommitting}
+              onProceedToNextStage={(nextStage) => {
+                setStage(nextStage);
+                setActiveTab(0); // Switch to Pipeline tab
+              }}
             />
           ) : (
             <Box sx={{ textAlign: 'center', py: 8 }}>

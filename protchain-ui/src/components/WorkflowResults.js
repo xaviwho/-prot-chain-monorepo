@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import {
   Box,
@@ -22,14 +22,18 @@ import {
   CircularProgress,
   Chip,
   Alert,
+  Grid,
 } from '@mui/material';
-import { ExpandMore, Download, HourglassEmpty, ErrorOutline, CheckCircle, Warning, Error as ErrorIcon } from '@mui/icons-material';
+import { ExpandMore, Download, HourglassEmpty, ErrorOutline, CheckCircle, Warning, Error as ErrorIcon, NavigateNext, PictureAsPdf, Image as ImageIcon } from '@mui/icons-material';
 import { saveAs } from 'file-saver';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 // Import 3D viewers
 import ProteinViewer3D from './ProteinViewer3D';
 import BindingSiteVisualizer from './BindingSiteVisualizer';
 import SmartDruggabilityCard from './SmartDruggabilityCard';
 import DockingPoseViewer from './DockingPoseViewer';
+import { getIpfsGatewayUrl } from '@/lib/api';
 // Alias for backward compatibility
 const ProteinViewer = ProteinViewer3D;
 
@@ -41,19 +45,115 @@ function TabPanel({ children, value, index }) {
   );
 }
 
-function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onProceedWithoutCommitting = null }) {
-  // Initialize blockchain state from persisted workflow data
-  const blockchainData = workflow?.blockchain || {};
-  const [blockchainCommitted, setBlockchainCommitted] = useState(!!blockchainData.transactionHash);
-  const [ipfsHash, setIpfsHash] = useState(blockchainData.ipfsHash || null);
-  const [blockchainTxHash, setBlockchainTxHash] = useState(blockchainData.transactionHash || null);
-  const [commitLoading, setCommitLoading] = useState(false);
-  const [verifyLoading, setVerifyLoading] = useState(false);
-  const [verificationResult, setVerificationResult] = useState(blockchainData.verified ? blockchainData.verificationData : null);
+function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onProceedToNextStage = null }) {
   const [currentTab, setCurrentTab] = useState(activeTab);
   const [selectedPocketId, setSelectedPocketId] = useState(null);
   const [selectedPoseCompound, setSelectedPoseCompound] = useState(null);
+  const [exportingFormat, setExportingFormat] = useState(null);
+  const resultsRef = useRef(null);
   const params = useParams();
+
+  const stageLabel = {
+    structure_preparation: 'Structure Preparation',
+    binding_site_analysis: 'Binding Site Analysis',
+    virtual_screening: 'Virtual Screening',
+    molecular_dynamics: 'Molecular Dynamics',
+    lead_optimization: 'Lead Optimization',
+  }[stage] || stage;
+
+  const handleDownloadPNG = useCallback(async () => {
+    if (!resultsRef.current) return;
+    setExportingFormat('png');
+    try {
+      const canvas = await html2canvas(resultsRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: resultsRef.current.scrollWidth,
+      });
+      canvas.toBlob((blob) => {
+        if (blob) saveAs(blob, `workflow-${params.id}-${stage}-${new Date().toISOString().split('T')[0]}.png`);
+      }, 'image/png');
+    } catch (err) {
+      console.error('PNG export error:', err);
+    } finally {
+      setExportingFormat(null);
+    }
+  }, [params.id, stage]);
+
+  const handleDownloadPDF = useCallback(async () => {
+    if (!resultsRef.current) return;
+    setExportingFormat('pdf');
+    try {
+      const canvas = await html2canvas(resultsRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: resultsRef.current.scrollWidth,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      // A4 dimensions in points
+      const pdfWidth = 595.28;
+      const pdfHeight = 841.89;
+      const margin = 20;
+      const contentWidth = pdfWidth - margin * 2;
+      const scaledHeight = (imgHeight * contentWidth) / imgWidth;
+
+      const pdf = new jsPDF({
+        orientation: scaledHeight > pdfHeight ? 'portrait' : 'portrait',
+        unit: 'pt',
+        format: 'a4',
+      });
+
+      // Add title
+      pdf.setFontSize(16);
+      pdf.setTextColor(33, 33, 33);
+      pdf.text(`ProtChain — ${stageLabel} Results`, margin, margin + 12);
+      pdf.setFontSize(9);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Workflow #${params.id} • Exported ${new Date().toLocaleString()}`, margin, margin + 26);
+
+      const headerHeight = 40;
+      let yOffset = margin + headerHeight;
+      let remainingHeight = scaledHeight;
+      let sourceY = 0;
+
+      // Paginate if content is taller than one page
+      while (remainingHeight > 0) {
+        const availableHeight = pdfHeight - yOffset - margin;
+        const sliceHeight = Math.min(availableHeight, remainingHeight);
+        const sourceSliceHeight = (sliceHeight / scaledHeight) * imgHeight;
+
+        // Create a temporary canvas for each page slice
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = imgWidth;
+        sliceCanvas.height = sourceSliceHeight;
+        const ctx = sliceCanvas.getContext('2d');
+        ctx.drawImage(canvas, 0, sourceY, imgWidth, sourceSliceHeight, 0, 0, imgWidth, sourceSliceHeight);
+
+        const sliceData = sliceCanvas.toDataURL('image/png');
+        pdf.addImage(sliceData, 'PNG', margin, yOffset, contentWidth, sliceHeight);
+
+        remainingHeight -= sliceHeight;
+        sourceY += sourceSliceHeight;
+
+        if (remainingHeight > 0) {
+          pdf.addPage();
+          yOffset = margin;
+        }
+      }
+
+      pdf.save(`workflow-${params.id}-${stage}-${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (err) {
+      console.error('PDF export error:', err);
+    } finally {
+      setExportingFormat(null);
+    }
+  }, [params.id, stage, stageLabel]);
   
   // Initialize 3Dmol.js viewer for binding site visualization
   useEffect(() => {
@@ -178,111 +278,94 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
 
   }, [stage, results, params?.id]);
 
-  const commitToBlockchain = async () => {
-    if (!results || !params.id) return;
-
-    setCommitLoading(true);
-    try {
-      const ipfsResponse = await fetch('/api/ipfs/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          workflowId: params.id,
-          results: results,
-          timestamp: new Date().toISOString(),
-          stage: stage,
-        }),
-      });
-
-      if (!ipfsResponse.ok) {
-        throw new Error('Failed to upload to IPFS');
-      }
-
-      const ipfsData = await ipfsResponse.json();
-      setIpfsHash(ipfsData.hash);
-
-      const blockchainResponse = await fetch('/api/blockchain/commit-results', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          workflowId: params.id,
-          ipfsHash: ipfsData.hash,
-          resultsHash: generateResultsHash(results),
-          stage: stage,
-        }),
-      });
-
-      if (!blockchainResponse.ok) {
-        throw new Error('Failed to commit to blockchain');
-      }
-
-      const blockchainData = await blockchainResponse.json();
-      setBlockchainTxHash(blockchainData.transactionHash);
-      setBlockchainCommitted(true);
-      
-      // Store commit info in localStorage with stage-specific keys for unique hashes
-      const recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
-      const stageKey = `${params.id}_${stage}`; // Use stage-specific key
-      
-      if (!recentCommits[params.id]) {
-        recentCommits[params.id] = {};
-      }
-      
-      recentCommits[params.id][stage] = {
-        txHash: blockchainData.transactionHash,
-        ipfsHash: ipfsData.hash,
-        timestamp: new Date().toISOString(),
-        stage: stage
-      };
-      localStorage.setItem('recentBlockchainCommits', JSON.stringify(recentCommits));
-      
-    } catch (error) {
-      alert('Failed to commit results to blockchain: ' + error.message);
-    } finally {
-      setCommitLoading(false);
+  // Reusable blockchain provenance display
+  const BlockchainProvenanceCard = ({ blockchain }) => {
+    if (!blockchain) return null;
+    if (blockchain.success === false) {
+      if (blockchain.skipped) return null; // silently skip if not configured
+      return (
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          Blockchain commit skipped: {blockchain.error || 'Unknown error'}
+        </Alert>
+      );
     }
+    return (
+      <Paper sx={{ p: 2, mt: 2, backgroundColor: 'rgba(46, 125, 50, 0.05)', border: '1px solid rgba(46, 125, 50, 0.2)', borderRadius: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <CheckCircle sx={{ color: '#2E7D32', fontSize: 20 }} />
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#2E7D32' }}>
+            Blockchain Verified (Automatic)
+          </Typography>
+        </Box>
+        <Box sx={{ fontFamily: 'monospace', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+            <strong>Tx Hash:</strong>{' '}
+            <a href={`https://purechain-explorer.onrender.com/tx/${blockchain.txHash}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>
+              {blockchain.txHash}
+            </a>
+          </Typography>
+          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+            <strong>IPFS CID:</strong>{' '}
+            <a href={`${getIpfsGatewayUrl()}/ipfs/${blockchain.ipfsHash}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>
+              {blockchain.ipfsHash}
+            </a>
+          </Typography>
+          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+            <strong>Results Hash (SHA-256):</strong> {blockchain.resultsHash?.slice(0, 16)}...{blockchain.resultsHash?.slice(-8)}
+          </Typography>
+          {blockchain.blockNumber && (
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+              <strong>Block:</strong> {blockchain.blockNumber}
+            </Typography>
+          )}
+        </Box>
+        {blockchain.chain && (
+          <Box sx={{ mt: 1.5, pl: 2, borderLeft: '3px solid #4CAF50' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              Chained from: <strong>{blockchain.chain.parentStage?.replace(/_/g, ' ')}</strong>
+            </Typography>
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+              Parent Tx: {blockchain.chain.parentTxHash?.slice(0, 24)}...
+            </Typography>
+          </Box>
+        )}
+      </Paper>
+    );
   };
 
-  const verifyResults = async () => {
-    if (!blockchainTxHash || !ipfsHash) return;
-
-    setVerifyLoading(true);
-    try {
-      const verifyResponse = await fetch('/api/blockchain/verify-results', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          transactionHash: blockchainTxHash,
-          ipfsHash: ipfsHash,
-          workflowId: params.id,
-        }),
-      });
-
-      if (!verifyResponse.ok) {
-        throw new Error('Failed to verify results');
-      }
-
-      const verifyData = await verifyResponse.json();
-      setVerificationResult(verifyData);
-    } catch (error) {
-      alert('Failed to verify results: ' + error.message);
-    } finally {
-      setVerifyLoading(false);
-    }
-  };
-
-  const generateResultsHash = (results) => {
-    return btoa(JSON.stringify(results)).slice(0, 32);
-  };
+  const DownloadButtonGroup = ({ label = 'Download Results' }) => (
+    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+      <Button
+        variant="contained"
+        startIcon={<Download />}
+        onClick={handleDownloadResults}
+        size="small"
+        sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}
+      >
+        CSV
+      </Button>
+      <Button
+        variant="contained"
+        startIcon={<PictureAsPdf />}
+        onClick={handleDownloadPDF}
+        disabled={exportingFormat === 'pdf'}
+        size="small"
+        sx={{ backgroundColor: '#d32f2f', '&:hover': { backgroundColor: '#b71c1c' } }}
+      >
+        {exportingFormat === 'pdf' ? 'Exporting...' : 'PDF'}
+      </Button>
+      <Button
+        variant="contained"
+        startIcon={<ImageIcon />}
+        onClick={handleDownloadPNG}
+        disabled={exportingFormat === 'png'}
+        size="small"
+        sx={{ backgroundColor: '#388e3c', '&:hover': { backgroundColor: '#2e7d32' } }}
+      >
+        {exportingFormat === 'png' ? 'Exporting...' : 'PNG'}
+      </Button>
+    </Box>
+  );
 
   const handleDownloadResults = () => {
     if (!results) return;
@@ -559,75 +642,43 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
     let structureData = {};
 
     if (typeof data === 'object' && data !== null) {
-      // First, check if the entire data object needs to be parsed
-      if (data.data && typeof data.data === 'string') {
-        try {
-          // The data.data field might be a JSON string
-          const parsedData = JSON.parse(data.data);
-          data = { ...data, data: parsedData };
-        } catch (e) {
+      // Unwrap successive { success, data } wrappers (BioAPI + Go backend both wrap)
+      let unwrapped = data;
+      for (let i = 0; i < 3; i++) {
+        if (unwrapped && typeof unwrapped === 'object' && unwrapped.data && typeof unwrapped.data === 'string') {
+          try { unwrapped = { ...unwrapped, data: JSON.parse(unwrapped.data) }; } catch (_) { break; }
         }
-      }
-      
-      // Check various possible data structures
-      if (data.data && data.data.details && data.data.details.descriptors) {
-        structureData = data.data.details.descriptors;
-      } else if (data.details && data.details.descriptors) {
-        structureData = data.details.descriptors;
-      } else if (data.descriptors) {
-        structureData = data.descriptors;
-      } else if (data.STRUCTURE_PREPARATION && data.STRUCTURE_PREPARATION.descriptors) {
-        structureData = data.STRUCTURE_PREPARATION.descriptors;
-      } else if (data.atom_count || data.residue_count || data.chain_count) {
-        structureData = {
-          num_atoms: data.atom_count,
-          num_residues: data.residue_count,
-          num_chains: data.chain_count,
-          hetatm_count: data.hetatm_count,
-          has_hydrogens: data.has_hydrogens,
-          has_ligands: data.has_ligands,
-        };
-      } else if (data.structure_preparation && data.structure_preparation.descriptors) {
-        structureData = data.structure_preparation.descriptors;
-      } else if (data.data) {
-        // If data.data exists but doesn't have the expected structure, check if it needs parsing
-        if (typeof data.data === 'string') {
-          try {
-            // Try to parse if it's a JSON string
-            const parsed = JSON.parse(data.data);
-            if (parsed.details && parsed.details.descriptors) {
-              structureData = parsed.details.descriptors;
-            } else if (parsed.descriptors) {
-              structureData = parsed.descriptors;
-            } else {
-              structureData = parsed;
-            }
-          } catch (e) {
-            structureData = data.data;
-          }
+        if (unwrapped && typeof unwrapped === 'object' && unwrapped.data && typeof unwrapped.data === 'object') {
+          // If this level has details.descriptors, stop here — this is the payload level
+          if (unwrapped.details && unwrapped.details.descriptors) break;
+          unwrapped = unwrapped.data;
         } else {
-          structureData = data.data;
-        }
-      } else {
-        // Last resort - use all the data we have
-        structureData = { ...data };
-        
-        // If data.data exists and is an object, merge it in
-        if (data.data && typeof data.data === 'object') {
-          structureData = { ...structureData, ...data.data };
-          // Remove the nested data field to avoid duplication
-          delete structureData.data;
+          break;
         }
       }
 
-      // Flatten: if nested data object holds details/descriptors, hoist them
-      if (data.data && typeof data.data === 'object') {
-        if (!structureData.details && data.data.details) {
-          structureData.details = data.data.details;
-        }
-        if (!structureData.descriptors && data.data.descriptors) {
-          structureData.descriptors = data.data.descriptors;
-        }
+      // Now unwrapped should be the innermost payload (e.g. { workflow_id, pdb_id, details: { descriptors } })
+      if (unwrapped.details && unwrapped.details.descriptors) {
+        structureData = unwrapped.details.descriptors;
+      } else if (unwrapped.descriptors) {
+        structureData = unwrapped.descriptors;
+      } else if (data.STRUCTURE_PREPARATION && data.STRUCTURE_PREPARATION.descriptors) {
+        structureData = data.STRUCTURE_PREPARATION.descriptors;
+      } else if (data.structure_preparation && data.structure_preparation.descriptors) {
+        structureData = data.structure_preparation.descriptors;
+      } else if (unwrapped.atom_count || unwrapped.residue_count || unwrapped.chain_count) {
+        structureData = {
+          num_atoms: unwrapped.atom_count,
+          num_residues: unwrapped.residue_count,
+          num_chains: unwrapped.chain_count,
+          hetatm_count: unwrapped.hetatm_count,
+          has_hydrogens: unwrapped.has_hydrogens,
+          has_ligands: unwrapped.has_ligands,
+        };
+      } else if (typeof unwrapped === 'object' && Object.keys(unwrapped).length > 0) {
+        structureData = unwrapped;
+      } else {
+        structureData = { ...data };
       }
     }
 
@@ -656,412 +707,256 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
       );
     }
 
+    // Extract descriptors from various possible nesting levels
+    const d = structureData.descriptors || structureData.details?.descriptors || structureData;
+
+    const pdbId = d.pdb_id || structureData.pdb_id || results?.pdbId || results?.pdb_id || '';
+    const classification = d.protein_classification || '';
+    const analysisMethod = d.analysis_method || '';
+    const chains = Array.isArray(d.chain_information) ? d.chain_information : [];
+    const aminoAcids = d.amino_acid_composition && typeof d.amino_acid_composition === 'object' ? d.amino_acid_composition : {};
+    const com = d.center_of_mass && typeof d.center_of_mass === 'object' ? d.center_of_mass : null;
+    const ss = d.secondary_structure && typeof d.secondary_structure === 'object' ? d.secondary_structure : null;
+    const qm = d.quality_metrics && typeof d.quality_metrics === 'object' ? d.quality_metrics : null;
+
+    // Summary metrics
+    const metrics = [
+      { label: 'Atoms', value: d.num_atoms ?? structureData.num_atoms, icon: '⚛' },
+      { label: 'Residues', value: d.num_residues ?? structureData.num_residues, icon: '🧬' },
+      { label: 'Chains', value: d.num_chains ?? structureData.num_chains, icon: '🔗' },
+      { label: 'Mol. Weight', value: d.molecular_weight ?? structureData.molecular_weight, suffix: ' Da', format: 'weight', icon: '⚖' },
+      { label: 'Models', value: d.num_models, icon: '📐' },
+    ].filter(m => m.value != null);
+
+    const classificationColors = {
+      peptide: '#FF9800', small_protein: '#2196F3', medium_protein: '#4CAF50', large_protein: '#9C27B0',
+    };
+
+    // Sort amino acids by count descending
+    const sortedAA = Object.entries(aminoAcids)
+      .map(([code, count]) => ({ code, count: Math.round(Number(count)) }))
+      .sort((a, b) => b.count - a.count);
+    const maxAA = sortedAA.length > 0 ? sortedAA[0].count : 1;
+
     return (
       <Box>
-        <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
-          Structure Analysis Results
-        </Typography>
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <TableContainer>
-            <Table sx={{ minWidth: 500 }}>
-              <TableHead sx={{ backgroundColor: '#f5f5f5' }}>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Property</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Value</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {(() => {
-                  // Extract and flatten the data properly
-                  const rows = {};
-                  
-                  
-                  // If structureData has a 'data' field, extract from it
-                  if (structureData.data && typeof structureData.data === 'object') {
-                    const nestedData = structureData.data;
-                    
-                    // Extract details and descriptors if they exist
-                    if (nestedData.details) {
-                      // If details is a string, try to parse it
-                      if (typeof nestedData.details === 'string') {
-                        try {
-                          rows['Details'] = JSON.parse(nestedData.details);
-                        } catch (e) {
-                          rows['Details'] = nestedData.details;
-                        }
-                      } else {
-                        rows['Details'] = nestedData.details;
-                      }
-                    }
-                    if (nestedData.descriptors) {
-                      // If descriptors is a string, try to parse it
-                      if (typeof nestedData.descriptors === 'string') {
-                        try {
-                          rows['Descriptors'] = JSON.parse(nestedData.descriptors);
-                        } catch (e) {
-                          rows['Descriptors'] = nestedData.descriptors;
-                        }
-                      } else {
-                        rows['Descriptors'] = nestedData.descriptors;
-                      }
-                    }
-                    if (nestedData.method) {
-                      rows['Method'] = nestedData.method;
-                    }
-                    if (nestedData.pdb_id || nestedData.pdbId) {
-                      rows['Pdb Id'] = nestedData.pdb_id || nestedData.pdbId;
-                    }
-                    if (nestedData.status) {
-                      rows['Status'] = nestedData.status;
-                    }
-                    if (nestedData.workflow_id || nestedData.workflowId) {
-                      rows['Workflow Id'] = nestedData.workflow_id || nestedData.workflowId;
-                    }
-                  } else {
-                    // No nested data field, use structureData directly
-                    Object.entries(structureData).forEach(([key, value]) => {
-                      const keyLower = key.toLowerCase();
-                      
-                      // Skip raw PDB data
-                      if (typeof value === 'string' && value.length > 1000 && 
-                          (value.includes('ATOM') || value.includes('HETATM'))) {
-                        return;
-                      }
-                      
-                      // Skip large raw fields
-                      if ((keyLower === 'pdb_content' || keyLower === 'structure_data' || 
-                           keyLower === 'raw_data' || keyLower === 'file_content') && 
-                          typeof value === 'string' && value.length > 100) {
-                        return;
-                      }
-                      
-                      rows[key] = value;
-                    });
-                  }
-                  
-                  // Also add top-level metadata fields
-                  if (structureData.error !== undefined) {
-                    rows['Error'] = structureData.error || '';
-                  }
-                  if (structureData.success !== undefined) {
-                    rows['Success'] = structureData.success;
-                  }
-                  
-
-                  return Object.entries(rows).map(([key, value]) => (
-                    <TableRow key={key}>
-                      <TableCell sx={{ verticalAlign: 'top', fontWeight: 'medium' }}>
-                        {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          // Try to parse string values that might be JSON
-                          let displayValue = value;
-                          if (typeof value === 'string') {
-                            // Check if it looks like JSON
-                            if ((value.startsWith('{') && value.endsWith('}')) || 
-                                (value.startsWith('[') && value.endsWith(']'))) {
-                              try {
-                                displayValue = JSON.parse(value);
-                              } catch (e) {
-                                // Not valid JSON, use as is
-                                displayValue = value;
-                              }
-                            }
-                            // Also check if it's "[object Object]" string
-                            else if (value === '[object Object]') {
-                              displayValue = 'Data not properly formatted';
-                            }
-                          }
-                          
-                          // Now render based on type
-                          if (typeof displayValue === 'boolean') {
-                            return displayValue ? 'Yes' : 'No';
-                          } else if (typeof displayValue === 'number') {
-                            return displayValue.toFixed(2);
-                          } else if (typeof displayValue === 'object' && displayValue !== null) {
-                            // For large nested objects, show a formatted view
-                            const entries = Object.entries(displayValue);
-                            
-                            // If it's a very large object (like raw data), show it in a more compact format
-                            if (entries.length > 20 || JSON.stringify(displayValue).length > 1000) {
-                              return (
-                                <Box sx={{ 
-                                  p: 1, 
-                                  backgroundColor: '#f8f9fa', 
-                                  borderRadius: 1,
-                                  maxHeight: '200px',
-                                  overflowY: 'auto',
-                                  fontSize: '0.85rem',
-                                  fontFamily: 'monospace'
-                                }}>
-                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                    {JSON.stringify(displayValue, null, 2)}
-                                  </pre>
-                                </Box>
-                              );
-                            }
-                            
-                            // For smaller objects, show in table format
-                            return (
-                            <Box sx={{ p: 1, backgroundColor: '#f8f9fa', borderRadius: 1 }}>
-                              <Table size="small" sx={{ minWidth: 'auto' }}>
-                                <TableBody>
-                                  {entries.map(([subKey, subValue]) => (
-                                    <TableRow key={subKey} sx={{ 
-                                      '&:last-child td': { border: 0 },
-                                      '& td': { borderBottom: '1px solid #e0e0e0' }
-                                    }}>
-                                      <TableCell sx={{ 
-                                        py: 0.75, 
-                                        px: 1, 
-                                        fontSize: '0.875rem', 
-                                        fontWeight: 500,
-                                        color: '#555',
-                                        width: '40%'
-                                      }}>
-                                        {subKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                      </TableCell>
-                                      <TableCell sx={{ 
-                                        py: 0.75, 
-                                        px: 1, 
-                                        fontSize: '0.875rem',
-                                        fontWeight: 400
-                                      }}>
-                                        {(() => {
-                                          // Handle different types of subValue
-                                          if (typeof subValue === 'number') {
-                                            return subValue.toFixed(2);
-                                          } else if (typeof subValue === 'boolean') {
-                                            return subValue ? 'Yes' : 'No';
-                                          } else if (typeof subValue === 'object' && subValue !== null) {
-                                            // Render nested object as a table
-                                            return (
-                                            <Box sx={{ p: 0.5, backgroundColor: '#f0f0f0', borderRadius: 0.5, mt: 0.5 }}>
-                                              <Table size="small" sx={{ minWidth: 'auto' }}>
-                                                <TableBody>
-                                                  {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
-                                                    <TableRow key={nestedKey} sx={{ 
-                                                      '&:last-child td': { border: 0 },
-                                                      '& td': { borderBottom: '1px solid #ddd' }
-                                                    }}>
-                                                      <TableCell sx={{ 
-                                                        py: 0.5, 
-                                                        px: 0.75, 
-                                                        fontSize: '0.8rem', 
-                                                        fontWeight: 500,
-                                                        color: '#666',
-                                                        width: '45%'
-                                                      }}>
-                                                        {nestedKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                                      </TableCell>
-                                                      <TableCell sx={{ py: 0.5, px: 0.75, fontSize: '0.8rem' }}>
-                                                        {(() => {
-                                                          if (typeof nestedValue === 'number') {
-                                                            return nestedValue.toFixed(2);
-                                                          } else if (typeof nestedValue === 'boolean') {
-                                                            return nestedValue ? 'Yes' : 'No';
-                                                          } else if (typeof nestedValue === 'object' && nestedValue !== null) {
-                                                            // For deeply nested objects, show as a compact table
-                                                            return (
-                                                              <Box sx={{ mt: 0.5 }}>
-                                                                <Table size="small" sx={{ minWidth: 'auto', '& td': { py: 0.25, px: 0.5, fontSize: '0.75rem', border: 'none' } }}>
-                                                                  <TableBody>
-                                                                    {Object.entries(nestedValue).map(([deepKey, deepValue]) => (
-                                                                      <TableRow key={deepKey}>
-                                                                        <TableCell sx={{ fontWeight: 500, color: '#888', width: '50%' }}>
-                                                                          {deepKey.replace(/_/g, ' ')}:
-                                                                        </TableCell>
-                                                                        <TableCell>
-                                                                          {typeof deepValue === 'number' ? deepValue.toFixed(2) : 
-                                                                           typeof deepValue === 'boolean' ? (deepValue ? 'Yes' : 'No') :
-                                                                           typeof deepValue === 'object' ? JSON.stringify(deepValue) : String(deepValue)}
-                                                                        </TableCell>
-                                                                      </TableRow>
-                                                                    ))}
-                                                                  </TableBody>
-                                                                </Table>
-                                                              </Box>
-                                                            );
-                                                          } else {
-                                                            return String(nestedValue);
-                                                          }
-                                                        })()}
-                                                      </TableCell>
-                                                    </TableRow>
-                                                  ))}
-                                                </TableBody>
-                                              </Table>
-                                            </Box>
-                                            );
-                                          } else {
-                                            // For strings and other primitives
-                                            return String(subValue);
-                                          }
-                                        })()}
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </Box>
-                            );
-                          } else {
-                            // For strings and other types, display as is
-                            return displayValue;
-                          }
-                        })()}
-                      </TableCell>
-                    </TableRow>
-                  ));
-                })()}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          {/* 3D Protein Structure Visualization */}
-          <Box sx={{ mt: 4, mb: 3 }}>
-            <ProteinViewer3D 
-              pdbId={results?.pdbId || results?.pdb_id || workflow?.pdb_id || workflow?.pdbId}
-              workflowId={params?.id} 
-              stage="structure_preparation"
-              bindingSites={null}
+        {/* Header */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+            Structure Analysis
+          </Typography>
+          {pdbId && (
+            <Chip label={`PDB: ${pdbId.toUpperCase()}`} color="primary" variant="outlined" />
+          )}
+          {classification && (
+            <Chip
+              label={classification.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              sx={{ backgroundColor: classificationColors[classification] || '#757575', color: 'white' }}
             />
-          </Box>
+          )}
+          {analysisMethod && (
+            <Chip label={analysisMethod.replace(/_/g, ' ')} size="small" variant="outlined" color="success" />
+          )}
+        </Box>
 
-          <Box sx={{ mt: 3 }}>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleDownloadResults}
-                sx={{
-                  background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
-                  color: 'white',
-                  '&:hover': {
-                    background: 'linear-gradient(45deg, #1976D2 30%, #0288D1 90%)',
-                  },
-                }}
-              >
-                Download Results
-              </Button>
-
-              {!blockchainCommitted ? (
-                <>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    onClick={commitToBlockchain}
-                    disabled={commitLoading}
-                    sx={{
-                      background: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)',
-                      color: 'white',
-                      '&:hover': {
-                        background: 'linear-gradient(45deg, #388E3C 30%, #689F38 90%)',
-                      },
-                    }}
-                  >
-                    {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
-                  </Button>
-                  {onProceedWithoutCommitting && (
-                    <Button
-                      variant="outlined"
-                      onClick={() => onProceedWithoutCommitting(stage, results)}
-                      sx={{
-                        borderColor: '#FF9800',
-                        color: '#FF9800',
-                        '&:hover': {
-                          borderColor: '#F57C00',
-                          backgroundColor: 'rgba(255, 152, 0, 0.08)',
-                        },
-                      }}
-                    >
-                      Proceed Without Committing
-                    </Button>
-                  )}
-                </>
-              ) : (
-                <Button
-                  variant="contained"
-                  color="info"
-                  onClick={verifyResults}
-                  disabled={verifyLoading}
-                  sx={{
-                    background: 'linear-gradient(45deg, #00BCD4 30%, #009688 90%)',
-                    color: 'white',
-                    '&:hover': {
-                      background: 'linear-gradient(45deg, #0097A7 30%, #00796B 90%)',
-                    },
-                  }}
-                >
-                  {verifyLoading ? <CircularProgress size={24} /> : 'Verify'}
-                </Button>
-              )}
-            </Box>
-
-            {blockchainCommitted && ipfsHash && blockchainTxHash && (
-              <Paper sx={{ p: 2, mt: 2, backgroundColor: 'rgba(46, 125, 50, 0.05)', border: '1px solid rgba(46, 125, 50, 0.2)' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-                  Blockchain & IPFS Records
+        {/* Summary Metric Cards */}
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {metrics.map((m) => (
+            <Grid item xs={6} sm={4} md key={m.label}>
+              <Paper sx={{ p: 2, textAlign: 'center', backgroundColor: '#fafafa' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  {m.label}
                 </Typography>
-                <Box sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                  <Typography variant="body2">
-                    <strong>IPFS Hash:</strong> 
-                    <a 
-                      href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`}
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{ color: '#1976d2', textDecoration: 'none', marginLeft: '8px' }}
-                    >
-                      {ipfsHash}
-                    </a>
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Blockchain Tx:</strong> 
-                    <a 
-                      href={`https://nsllab-kit.onrender.com/purechain/api/v1/tx/${blockchainTxHash}`}
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{ color: '#1976d2', textDecoration: 'none', marginLeft: '8px' }}
-                    >
-                      {blockchainTxHash}
-                    </a>
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Receipt:</strong> 
-                    <a 
-                      href={`https://nsllab-kit.onrender.com/purechain/api/v1/receipt/${blockchainTxHash}`}
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{ color: '#1976d2', textDecoration: 'none', marginLeft: '8px' }}
-                    >
-                      View Official Receipt
-                    </a>
-                  </Typography>
-                </Box>
-              </Paper>
-            )}
-
-            {verificationResult && (
-              <Box sx={{ mt: 2, p: 2, backgroundColor: verificationResult.verified ? 'rgba(46, 125, 50, 0.1)' : 'rgba(255, 167, 38, 0.1)', borderRadius: 1 }}>
-                <Typography variant="body2" sx={{ fontWeight: 'bold', color: verificationResult.verified ? 'success.main' : 'warning.main' }}>
-                  {verificationResult.verified ? '✅ Verification Successful' : '⚠️ Verification Failed'}
-                </Typography>
-                <Typography variant="body2" sx={{ mt: 1 }}>{verificationResult.message}</Typography>
-                {verificationResult.blockchainData && (
-                  <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-                    <Typography variant="caption" display="block">
-                      Block: {verificationResult.blockchainData.blockNumber}
+                <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#1a237e' }}>
+                  {m.format === 'weight'
+                    ? Number(m.value).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                    : Math.round(Number(m.value)).toLocaleString()}
+                  {m.suffix && (
+                    <Typography component="span" variant="body2" color="text.secondary">
+                      {m.suffix}
                     </Typography>
-                    <Typography variant="caption" display="block">
-                      Timestamp: {new Date(verificationResult.blockchainData.timestamp * 1000).toLocaleString()}
+                  )}
+                </Typography>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+
+        <Paper sx={{ p: 3, mb: 3 }}>
+          {/* Chain Information */}
+          {chains.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Chain Information
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead sx={{ backgroundColor: '#f5f5f5' }}>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Chain ID</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>Residues</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>Atoms</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {chains.map((chain, i) => (
+                      <TableRow key={chain.chain_id || i}>
+                        <TableCell>
+                          <Chip label={chain.chain_id || `Chain ${i + 1}`} size="small" color="primary" variant="outlined" />
+                        </TableCell>
+                        <TableCell align="right">{Math.round(Number(chain.num_residues || 0)).toLocaleString()}</TableCell>
+                        <TableCell align="right">{Math.round(Number(chain.num_atoms || 0)).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+
+          {/* Secondary Structure */}
+          {ss && ss.method !== 'no_data_available' && (ss.helix_percentage > 0 || ss.sheet_percentage > 0 || ss.coil_percentage > 0) && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Secondary Structure
+              </Typography>
+              <Box sx={{ display: 'flex', height: 28, borderRadius: 1, overflow: 'hidden', mb: 1 }}>
+                {ss.helix_percentage > 0 && (
+                  <Box sx={{ width: `${ss.helix_percentage}%`, backgroundColor: '#5C6BC0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography variant="caption" sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.7rem' }}>
+                      {ss.helix_percentage >= 8 ? `${Number(ss.helix_percentage).toFixed(1)}%` : ''}
+                    </Typography>
+                  </Box>
+                )}
+                {ss.sheet_percentage > 0 && (
+                  <Box sx={{ width: `${ss.sheet_percentage}%`, backgroundColor: '#66BB6A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography variant="caption" sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.7rem' }}>
+                      {ss.sheet_percentage >= 8 ? `${Number(ss.sheet_percentage).toFixed(1)}%` : ''}
+                    </Typography>
+                  </Box>
+                )}
+                {ss.coil_percentage > 0 && (
+                  <Box sx={{ width: `${ss.coil_percentage}%`, backgroundColor: '#BDBDBD', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography variant="caption" sx={{ color: '#333', fontWeight: 'bold', fontSize: '0.7rem' }}>
+                      {ss.coil_percentage >= 8 ? `${Number(ss.coil_percentage).toFixed(1)}%` : ''}
                     </Typography>
                   </Box>
                 )}
               </Box>
-            )}
-          </Box>
+              <Box sx={{ display: 'flex', gap: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#5C6BC0' }} />
+                  <Typography variant="caption">Helix ({Number(ss.helix_percentage).toFixed(1)}%)</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#66BB6A' }} />
+                  <Typography variant="caption">Sheet ({Number(ss.sheet_percentage).toFixed(1)}%)</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#BDBDBD' }} />
+                  <Typography variant="caption">Coil ({Number(ss.coil_percentage).toFixed(1)}%)</Typography>
+                </Box>
+              </Box>
+            </Box>
+          )}
+
+          {/* Amino Acid Composition */}
+          {sortedAA.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Amino Acid Composition
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                {sortedAA.map(({ code, count }) => (
+                  <Box key={code} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="caption" sx={{ width: 32, fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right' }}>
+                      {code}
+                    </Typography>
+                    <Box sx={{ flex: 1, height: 18, backgroundColor: '#f0f0f0', borderRadius: 1, overflow: 'hidden' }}>
+                      <Box sx={{
+                        height: '100%',
+                        width: `${(count / maxAA) * 100}%`,
+                        backgroundColor: '#4CAF50',
+                        borderRadius: 1,
+                        minWidth: count > 0 ? 4 : 0,
+                      }} />
+                    </Box>
+                    <Typography variant="caption" sx={{ width: 28, fontFamily: 'monospace', textAlign: 'right' }}>
+                      {count}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+
+          {/* Quality Metrics */}
+          {qm && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Quality Metrics
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                {qm.completeness != null && (
+                  <Chip label={`Completeness: ${(Number(qm.completeness) * 100).toFixed(1)}%`} variant="outlined" />
+                )}
+                {qm.resolution != null && (
+                  <Chip label={`Resolution: ${Number(qm.resolution).toFixed(2)} \u00C5`} variant="outlined" />
+                )}
+                {qm.experimental_method && (
+                  <Chip label={qm.experimental_method} variant="outlined" />
+                )}
+              </Box>
+            </Box>
+          )}
+
+          {/* Center of Mass */}
+          {com && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                Center of Mass
+              </Typography>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                x: {Number(com.x).toFixed(2)}, y: {Number(com.y).toFixed(2)}, z: {Number(com.z).toFixed(2)}
+              </Typography>
+            </Box>
+          )}
         </Paper>
+
+        {/* 3D Protein Structure Visualization */}
+        <Box sx={{ mb: 3 }}>
+          <ProteinViewer3D
+            pdbId={results?.pdbId || results?.pdb_id || workflow?.pdb_id || workflow?.pdbId}
+            workflowId={params?.id}
+            stage="structure_preparation"
+            bindingSites={null}
+          />
+        </Box>
+
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+          <DownloadButtonGroup />
+        </Box>
+
+        <BlockchainProvenanceCard blockchain={results?.blockchain} />
+
+        {onProceedToNextStage && (
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="contained"
+              size="large"
+              endIcon={<NavigateNext />}
+              onClick={() => onProceedToNextStage('binding_site_analysis')}
+              sx={{
+                background: 'linear-gradient(45deg, #4CAF50 30%, #66BB6A 90%)',
+                color: 'white',
+                px: 4,
+                '&:hover': { background: 'linear-gradient(45deg, #388E3C 30%, #4CAF50 90%)' },
+              }}
+            >
+              Proceed to Binding Site Analysis
+            </Button>
+          </Box>
+        )}
       </Box>
     );
   };
@@ -1219,9 +1114,7 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
         </Paper>
 
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-          <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>
-            Download Results
-          </Button>
+          <DownloadButtonGroup />
         </Box>
 
         {/* AI-Enhanced Druggability Scoring */}
@@ -1230,99 +1123,27 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
           pdbId={data?.pdb_id || data?.pdbId || workflow?.pdb_id || workflow?.pdbId || results?.pdbId || results?.pdb_id}
         />
 
-        {/* Blockchain/IPFS Integration Section */}
-        <Paper sx={{ p: 3, mt: 3, borderRadius: 2, backgroundColor: 'rgba(25, 118, 210, 0.02)' }}>
-          <Typography variant="h6" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold' }}>
-            🔗 Blockchain & IPFS Integration
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
-            Commit your binding site analysis results to blockchain for permanent provenance and integrity verification.
-          </Typography>
-          
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            {!blockchainCommitted ? (
-              <>
-                <Button
-                  variant="contained"
-                  onClick={commitToBlockchain}
-                  disabled={commitLoading}
-                  sx={{
-                    background: 'linear-gradient(45deg, #2E7D32 30%, #388E3C 90%)',
-                    color: 'white',
-                    '&:hover': {
-                      background: 'linear-gradient(45deg, #1B5E20 30%, #2E7D32 90%)',
-                    },
-                  }}
-                >
-                  {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
-                </Button>
-                {onProceedWithoutCommitting && (
-                  <Button
-                    variant="outlined"
-                    onClick={() => onProceedWithoutCommitting(stage, results)}
-                    sx={{
-                      borderColor: '#FF9800',
-                      color: '#FF9800',
-                      '&:hover': {
-                        borderColor: '#F57C00',
-                        backgroundColor: 'rgba(255, 152, 0, 0.08)',
-                      },
-                    }}
-                  >
-                    Proceed Without Committing
-                  </Button>
-                )}
-              </>
-            ) : (
-              <Button
-                variant="contained"
-                color="info"
-                onClick={verifyResults}
-                disabled={verifyLoading}
-                sx={{
-                  background: 'linear-gradient(45deg, #00BCD4 30%, #009688 90%)',
-                  color: 'white',
-                  '&:hover': {
-                    background: 'linear-gradient(45deg, #0097A7 30%, #00796B 90%)',
-                  },
-                }}
-              >
-                {verifyLoading ? <CircularProgress size={24} /> : 'Verify'}
-              </Button>
-            )}
+        {/* Blockchain Provenance Record */}
+        <BlockchainProvenanceCard blockchain={results?.blockchain} />
+
+        {onProceedToNextStage && (
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="contained"
+              size="large"
+              endIcon={<NavigateNext />}
+              onClick={() => onProceedToNextStage('virtual_screening')}
+              sx={{
+                background: 'linear-gradient(45deg, #4CAF50 30%, #66BB6A 90%)',
+                color: 'white',
+                px: 4,
+                '&:hover': { background: 'linear-gradient(45deg, #388E3C 30%, #4CAF50 90%)' },
+              }}
+            >
+              Proceed to Virtual Screening
+            </Button>
           </Box>
-
-          {blockchainCommitted && ipfsHash && blockchainTxHash && (
-            <Paper sx={{ p: 2, mt: 2, backgroundColor: 'rgba(46, 125, 50, 0.05)', border: '1px solid rgba(46, 125, 50, 0.2)' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-                Blockchain & IPFS Records
-              </Typography>
-              <Box sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                <Typography variant="body2"><strong>IPFS Hash:</strong> {ipfsHash}</Typography>
-                <Typography variant="body2"><strong>Blockchain Tx:</strong> {blockchainTxHash}</Typography>
-              </Box>
-            </Paper>
-          )}
-
-          {verificationResult && (
-            <Box sx={{ mt: 2, p: 2, backgroundColor: verificationResult.verified ? 'rgba(46, 125, 50, 0.1)' : 'rgba(255, 167, 38, 0.1)', borderRadius: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 'bold', color: verificationResult.verified ? 'success.main' : 'warning.main' }}>
-                {verificationResult.verified ? '✅ Verification Successful' : '⚠️ Verification Failed'}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 1 }}>{verificationResult.message}</Typography>
-              {verificationResult.blockchainData && (
-                <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-                  <Typography variant="caption" display="block">
-                    Block: {verificationResult.blockchainData.blockNumber}
-                  </Typography>
-                  <Typography variant="caption" display="block">
-                    Timestamp: {new Date(verificationResult.blockchainData.timestamp * 1000).toLocaleString()}
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          )}
-        </Paper>
+        )}
       </Box>
     );
   };
@@ -1350,16 +1171,41 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
       }
     };
 
+    const isOpenMM = data.method && data.method.toLowerCase().includes('openmm');
+    const methodLabel = isOpenMM
+      ? 'OpenMM (AMBER ff14SB + GAFF2 + GBn2)'
+      : 'Analytical Energy Minimisation';
+
     return (
       <Box>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6">
-            Molecular Dynamics Simulation Results
-          </Typography>
-          <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>
-            Download Results
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Typography variant="h6">
+              Molecular Dynamics Simulation Results
+            </Typography>
+            <Chip
+              label={methodLabel}
+              size="small"
+              color={isOpenMM ? 'success' : 'warning'}
+              variant="outlined"
+              sx={{ fontWeight: 'bold' }}
+            />
+          </Box>
+          <DownloadButtonGroup />
         </Box>
+
+        {isOpenMM && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            Genuine molecular dynamics simulation completed using OpenMM with AMBER ff14SB protein force field,
+            GAFF2 ligand parameterisation, and GBn2 implicit solvent (Langevin NVT ensemble).
+          </Alert>
+        )}
+        {!isOpenMM && data.method && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Results computed using analytical energy minimisation (Lennard-Jones + Coulomb + H-bond potentials).
+            Install OpenMM for full molecular dynamics simulation.
+          </Alert>
+        )}
 
         {/* Simulation Summary */}
         <Paper sx={{ p: 2, mb: 3, backgroundColor: '#f8fafc' }}>
@@ -1660,126 +1506,723 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
           </Box>
         )}
 
-        {/* Blockchain commit & proceed buttons */}
-        <Paper sx={{ p: 3, mt: 3, border: '1px solid #e0e0e0' }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Commit Results
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Commit your molecular dynamics results to blockchain for permanent provenance and integrity verification.
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            {!blockchainCommitted ? (
-              <>
-                <Button
-                  variant="contained"
-                  onClick={commitToBlockchain}
-                  disabled={commitLoading}
-                  sx={{
-                    background: 'linear-gradient(45deg, #2E7D32 30%, #388E3C 90%)',
-                    color: 'white',
-                    '&:hover': { background: 'linear-gradient(45deg, #1B5E20 30%, #2E7D32 90%)' },
-                  }}
-                >
-                  {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
-                </Button>
-                {onProceedWithoutCommitting && (
-                  <Button
-                    variant="outlined"
-                    onClick={() => onProceedWithoutCommitting(stage, results)}
-                    sx={{
-                      borderColor: '#FF9800', color: '#FF9800',
-                      '&:hover': { borderColor: '#F57C00', backgroundColor: 'rgba(255, 152, 0, 0.08)' },
-                    }}
-                  >
-                    Proceed Without Committing
-                  </Button>
-                )}
-              </>
-            ) : (
-              <Button
-                variant="contained"
-                color="info"
-                onClick={verifyResults}
-                disabled={verifyLoading}
-                sx={{
-                  background: 'linear-gradient(45deg, #00BCD4 30%, #009688 90%)',
-                  color: 'white',
-                  '&:hover': { background: 'linear-gradient(45deg, #0097A7 30%, #00796B 90%)' },
-                }}
-              >
-                {verifyLoading ? <CircularProgress size={24} /> : 'Verify'}
-              </Button>
-            )}
+        {/* Blockchain Provenance Record */}
+        <BlockchainProvenanceCard blockchain={results?.blockchain} />
+
+        {onProceedToNextStage && (
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="contained"
+              size="large"
+              endIcon={<NavigateNext />}
+              onClick={() => onProceedToNextStage('lead_optimization')}
+              sx={{
+                background: 'linear-gradient(45deg, #4CAF50 30%, #66BB6A 90%)',
+                color: 'white',
+                px: 4,
+                '&:hover': { background: 'linear-gradient(45deg, #388E3C 30%, #4CAF50 90%)' },
+              }}
+            >
+              Proceed to Lead Optimization
+            </Button>
           </Box>
-
-          {blockchainCommitted && ipfsHash && blockchainTxHash && (
-            <Paper sx={{ p: 2, mt: 2, backgroundColor: 'rgba(46, 125, 50, 0.05)', border: '1px solid rgba(46, 125, 50, 0.2)' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-                Blockchain & IPFS Records
-              </Typography>
-              <Box sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                <Typography variant="body2"><strong>IPFS Hash:</strong> {ipfsHash}</Typography>
-                <Typography variant="body2"><strong>Blockchain Tx:</strong> {blockchainTxHash}</Typography>
-              </Box>
-            </Paper>
-          )}
-
-          {verificationResult && (
-            <Box sx={{ mt: 2, p: 2, backgroundColor: verificationResult.verified ? 'rgba(46, 125, 50, 0.1)' : 'rgba(255, 167, 38, 0.1)', borderRadius: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 'bold', color: verificationResult.verified ? 'success.main' : 'warning.main' }}>
-                {verificationResult.verified ? '✅ Verification Successful' : '⚠️ Verification Failed'}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 1 }}>{verificationResult.message}</Typography>
-            </Box>
-          )}
-        </Paper>
+        )}
       </Box>
     );
   };
 
-  const renderOptimizationResults = (data) => (
-    <Box>
-      <Typography variant="h6" gutterBottom>
-        Lead Optimization Results
-      </Typography>
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Compound</TableCell>
-              <TableCell>Predicted Activity</TableCell>
-              <TableCell>Synthetic Accessibility</TableCell>
-              <TableCell>Drug Likeness</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {data.optimized_compounds.map((compound, index) => (
-              <TableRow key={index}>
-                <TableCell>{compound.name}</TableCell>
-                <TableCell>{compound.predicted_activity.toFixed(2)}</TableCell>
-                <TableCell>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Box sx={{ width: '100%', mr: 1 }}>
-                      <LinearProgress variant="determinate" value={compound.synthetic_accessibility * 10} />
-                    </Box>
-                    <Box sx={{ minWidth: 35 }}>
-                      <Typography variant="body2">{compound.synthetic_accessibility.toFixed(1)}/10</Typography>
-                    </Box>
-                  </Box>
-                </TableCell>
-                <TableCell>{compound.drug_likeness.toFixed(2)}</TableCell>
-                <TableCell>
-                  <Button size="small" variant="outlined">View</Button>
-                </TableCell>
+  const renderOptimizationResults = (data) => {
+    if (!data || !data.optimized_compounds) {
+      return <Typography>No lead optimization data available.</Typography>;
+    }
+
+    const classificationColor = (cls) => {
+      switch (cls) {
+        case 'advance': return 'success';
+        case 'optimize': return 'warning';
+        case 'deprioritize': return 'error';
+        default: return 'default';
+      }
+    };
+
+    const classificationLabel = (cls) => {
+      switch (cls) {
+        case 'advance': return 'Advance';
+        case 'optimize': return 'Optimize';
+        case 'deprioritize': return 'Deprioritize';
+        default: return cls;
+      }
+    };
+
+    const paretoFrontColor = (front) => {
+      if (front === 0) return 'success';
+      if (front === 1) return 'warning';
+      return 'default';
+    };
+
+    const isV2 = data.method?.includes('v2');
+
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6">
+            Lead Optimization Analysis
+          </Typography>
+          <DownloadButtonGroup />
+        </Box>
+
+        <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+          <Chip
+            label={`Method: ${data.method || 'RDKit Lead Optimization'}`}
+            color="primary"
+            variant="outlined"
+            size="small"
+          />
+          {isV2 && (
+            <Chip label="Advanced SAR + Pareto + Analog Generation" color="success" variant="outlined" size="small" />
+          )}
+        </Box>
+
+        {/* Summary Cards Row 1 */}
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'success.dark', color: 'white' }}>
+              <Typography variant="h4">{data.advance_count || 0}</Typography>
+              <Typography variant="body2">Advance</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'warning.dark', color: 'white' }}>
+              <Typography variant="h4">{data.optimize_count || 0}</Typography>
+              <Typography variant="body2">Optimize</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'error.dark', color: 'white' }}>
+              <Typography variant="h4">{data.deprioritize_count || 0}</Typography>
+              <Typography variant="body2">Deprioritize</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'grey.800', color: 'white' }}>
+              <Typography variant="h4">{data.compounds_analyzed || 0}</Typography>
+              <Typography variant="body2">Total Analyzed</Typography>
+            </Paper>
+          </Grid>
+        </Grid>
+
+        {/* Summary Cards Row 2 — v2 advanced stats */}
+        {isV2 && (
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            {data.pareto_summary && (
+              <Grid item xs={6} sm={3}>
+                <Paper sx={{ p: 2, textAlign: 'center', border: '1px solid', borderColor: 'success.main' }}>
+                  <Typography variant="h5" color="success.main">{data.pareto_summary.front_sizes?.[0] || 0}</Typography>
+                  <Typography variant="caption" color="text.secondary">Pareto Front 0</Typography>
+                </Paper>
+              </Grid>
+            )}
+            {data.analogs_count > 0 && (
+              <Grid item xs={6} sm={3}>
+                <Paper sx={{ p: 2, textAlign: 'center', border: '1px solid', borderColor: 'info.main' }}>
+                  <Typography variant="h5" color="info.main">{data.analogs_count}</Typography>
+                  <Typography variant="caption" color="text.secondary">Analogs Generated</Typography>
+                </Paper>
+              </Grid>
+            )}
+            {data.mmp_analysis && (
+              <Grid item xs={6} sm={3}>
+                <Paper sx={{ p: 2, textAlign: 'center', border: '1px solid', borderColor: 'secondary.main' }}>
+                  <Typography variant="h5" color="secondary.main">{data.mmp_analysis.transformations_found || 0}</Typography>
+                  <Typography variant="caption" color="text.secondary">MMP Transformations</Typography>
+                </Paper>
+              </Grid>
+            )}
+            {data.rgroup_decomposition && (
+              <Grid item xs={6} sm={3}>
+                <Paper sx={{ p: 2, textAlign: 'center', border: '1px solid', borderColor: 'warning.main' }}>
+                  <Typography variant="h5" color="warning.main">{data.rgroup_decomposition.r_groups?.length || 0}</Typography>
+                  <Typography variant="caption" color="text.secondary">R-Group Positions</Typography>
+                </Paper>
+              </Grid>
+            )}
+          </Grid>
+        )}
+
+        {/* Aggregate Metrics */}
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5">{data.average_qed?.toFixed(3) || 'N/A'}</Typography>
+              <Typography variant="caption" color="text.secondary">Avg QED Score</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5">{data.average_synthetic_accessibility?.toFixed(1) || 'N/A'}</Typography>
+              <Typography variant="caption" color="text.secondary">Avg SA Score</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5">{data.lipinski_pass_count || 0}/{data.compounds_analyzed || 0}</Typography>
+              <Typography variant="caption" color="text.secondary">Pass Lipinski</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5">{data.pains_clean_count || 0}/{data.compounds_analyzed || 0}</Typography>
+              <Typography variant="caption" color="text.secondary">PAINS Clean</Typography>
+            </Paper>
+          </Grid>
+        </Grid>
+
+        {data.summary?.recommendation && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            {data.summary.recommendation}
+          </Alert>
+        )}
+
+        {/* Compound Details Table (with Pareto column if available) */}
+        <TableContainer component={Paper} sx={{ mb: 3 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Rank</TableCell>
+                {data.pareto_summary && <TableCell>Pareto</TableCell>}
+                <TableCell>Compound</TableCell>
+                <TableCell>Classification</TableCell>
+                <TableCell>Drug-likeness</TableCell>
+                <TableCell>QED</TableCell>
+                <TableCell>SA Score</TableCell>
+                <TableCell>Lipinski</TableCell>
+                <TableCell>PAINS</TableCell>
+                <TableCell>logP</TableCell>
+                <TableCell>MW</TableCell>
               </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.optimized_compounds.map((compound, index) => (
+                <TableRow key={index} sx={{
+                  bgcolor: compound.classification === 'advance' ? 'rgba(76, 175, 80, 0.08)' :
+                           compound.classification === 'deprioritize' ? 'rgba(244, 67, 54, 0.08)' : 'inherit',
+                }}>
+                  <TableCell>{compound.rank || index + 1}</TableCell>
+                  {data.pareto_summary && (
+                    <TableCell>
+                      <Chip label={`F${compound.pareto_front ?? '?'}`} size="small" color={paretoFrontColor(compound.pareto_front)} variant="outlined" />
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <Typography variant="body2" fontWeight="bold">{compound.name}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip label={classificationLabel(compound.classification)} color={classificationColor(compound.classification)} size="small" />
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <LinearProgress variant="determinate" value={Math.min(100, (compound.drug_likeness || 0) * 100)}
+                        sx={{ width: 60, height: 8, borderRadius: 4 }}
+                        color={compound.drug_likeness >= 0.6 ? 'success' : compound.drug_likeness >= 0.4 ? 'warning' : 'error'} />
+                      <Typography variant="body2">{compound.drug_likeness?.toFixed(2)}</Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell>{compound.qed?.toFixed(3)}</TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <LinearProgress variant="determinate" value={Math.min(100, ((10 - (compound.synthetic_accessibility || 5)) / 9) * 100)}
+                        sx={{ width: 50, height: 8, borderRadius: 4 }} />
+                      <Typography variant="body2">{compound.synthetic_accessibility?.toFixed(1)}</Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell>
+                    {compound.lipinski_pass
+                      ? <Chip label={`Pass (${compound.lipinski_violations || 0})`} color="success" size="small" variant="outlined" />
+                      : <Chip label={`Fail (${compound.lipinski_violations})`} color="error" size="small" variant="outlined" />}
+                  </TableCell>
+                  <TableCell>
+                    {compound.pains_pass
+                      ? <Chip label="Clean" color="success" size="small" variant="outlined" />
+                      : <Chip label="Alert" color="error" size="small" variant="outlined" />}
+                  </TableCell>
+                  <TableCell>{compound.logp?.toFixed(2)}</TableCell>
+                  <TableCell>{compound.molecular_weight?.toFixed(0)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* ===== MMP Analysis Section ===== */}
+        {data.mmp_analysis && data.mmp_analysis.transformations?.length > 0 && (
+          <Accordion sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Matched Molecular Pair Analysis</Typography>
+                <Chip label={`${data.mmp_analysis.transformations_found} transformations`} size="small" color="secondary" variant="outlined" />
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Structural transformations between compound pairs correlated with activity changes.
+                More negative &Delta; Docking = better binding.
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Compound A</TableCell>
+                      <TableCell>Compound B</TableCell>
+                      <TableCell>Core</TableCell>
+                      <TableCell>From</TableCell>
+                      <TableCell>To</TableCell>
+                      <TableCell>&Delta; Docking</TableCell>
+                      <TableCell>&Delta; QED</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {data.mmp_analysis.transformations.slice(0, 15).map((t, i) => (
+                      <TableRow key={i} sx={{
+                        bgcolor: t.delta_docking_score < -0.5 ? 'rgba(76,175,80,0.08)' :
+                                 t.delta_docking_score > 0.5 ? 'rgba(244,67,54,0.08)' : 'inherit',
+                      }}>
+                        <TableCell><Typography variant="body2">{t.compound_a}</Typography></TableCell>
+                        <TableCell><Typography variant="body2">{t.compound_b}</Typography></TableCell>
+                        <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>{t.core_smiles?.slice(0, 30)}{t.core_smiles?.length > 30 ? '...' : ''}</Typography></TableCell>
+                        <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{t.transformation_from?.slice(0, 20)}</Typography></TableCell>
+                        <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{t.transformation_to?.slice(0, 20)}</Typography></TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color={t.delta_docking_score < 0 ? 'success.main' : 'error.main'} fontWeight="bold">
+                            {t.delta_docking_score?.toFixed(2)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color={t.delta_qed > 0 ? 'success.main' : t.delta_qed < 0 ? 'error.main' : 'text.secondary'}>
+                            {t.delta_qed > 0 ? '+' : ''}{t.delta_qed?.toFixed(3)}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              {data.mmp_analysis.top_beneficial_transformations?.length > 0 && (
+                <Alert severity="success" sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2">Top Beneficial Transformations</Typography>
+                  {data.mmp_analysis.top_beneficial_transformations.slice(0, 5).map((t, i) => (
+                    <Typography key={i} variant="body2">
+                      {t.compound_a} &rarr; {t.compound_b}: {t.transformation_from} &rarr; {t.transformation_to} (&Delta;docking: {t.delta_docking_score?.toFixed(2)})
+                    </Typography>
+                  ))}
+                </Alert>
+              )}
+            </AccordionDetails>
+          </Accordion>
+        )}
+
+        {/* ===== R-Group Decomposition Section ===== */}
+        {data.rgroup_decomposition && (
+          <Accordion sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="subtitle1" fontWeight="bold">R-Group Decomposition</Typography>
+                <Chip label={`${data.rgroup_decomposition.r_groups?.length || 0} positions`} size="small" color="warning" variant="outlined" />
+                <Chip label={`${(data.rgroup_decomposition.decomposition_success_rate * 100).toFixed(0)}% success`} size="small" variant="outlined" />
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Core scaffold: <strong style={{ fontFamily: 'monospace' }}>{data.rgroup_decomposition.core_smiles}</strong> ({data.rgroup_decomposition.core_num_atoms} atoms)
+              </Typography>
+              {data.rgroup_decomposition.r_groups?.map((rg, rgi) => (
+                <Box key={rgi} sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>Position {rg.position}</Typography>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Substituent</TableCell>
+                          <TableCell>Compounds</TableCell>
+                          <TableCell>Avg Activity</TableCell>
+                          <TableCell>Count</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {rg.substituents?.map((sub, si) => (
+                          <TableRow key={si}>
+                            <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{sub.smiles}</Typography></TableCell>
+                            <TableCell><Typography variant="caption">{sub.compounds?.join(', ')}</Typography></TableCell>
+                            <TableCell>
+                              <Typography variant="body2" color={sub.avg_activity < -5 ? 'success.main' : 'text.primary'}>
+                                {sub.avg_activity?.toFixed(2)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>{sub.count}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              ))}
+            </AccordionDetails>
+          </Accordion>
+        )}
+
+        {/* ===== Pareto Front Visualization ===== */}
+        {data.pareto_summary && (
+          <Accordion sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Multi-Objective Pareto Ranking</Typography>
+                <Chip label={`${data.pareto_summary.n_fronts} fronts`} size="small" color="success" variant="outlined" />
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Compounds ranked across {data.pareto_summary.objectives_used?.join(', ')}. Front 0 = non-dominated (best trade-off).
+              </Typography>
+              {data.pareto_summary.front_sizes?.map((size, fi) => (
+                <Box key={fi} sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Chip label={`Front ${fi}`} size="small" color={paretoFrontColor(fi)} />
+                    <Typography variant="body2">{size} compound{size !== 1 ? 's' : ''}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {data.optimized_compounds.filter(c => c.pareto_front === fi).map((c, ci) => (
+                      <Paper key={ci} sx={{ p: 1, px: 1.5, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="body2" fontWeight="bold">{c.name}</Typography>
+                        {c.pareto_objectives && (
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            {Object.entries(c.pareto_objectives).map(([key, val]) => (
+                              <Chip key={key} label={`${key.slice(0, 3)}: ${val?.toFixed(2)}`} size="small" variant="outlined"
+                                sx={{ fontSize: '0.65rem', height: 20 }} />
+                            ))}
+                          </Box>
+                        )}
+                      </Paper>
+                    ))}
+                  </Box>
+                </Box>
+              ))}
+            </AccordionDetails>
+          </Accordion>
+        )}
+
+        {/* Per-compound detail accordions */}
+        {data.optimized_compounds.map((compound, index) => (
+          <Accordion key={index} sx={{ mb: 1 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', minWidth: 30 }}>
+                  #{compound.rank || index + 1}
+                </Typography>
+                <Typography variant="subtitle2" sx={{ flex: 1 }}>
+                  {compound.name}
+                </Typography>
+                {compound.pareto_front != null && (
+                  <Chip label={`P${compound.pareto_front}`} size="small" color={paretoFrontColor(compound.pareto_front)} variant="outlined" sx={{ mr: 0.5 }} />
+                )}
+                <Chip label={classificationLabel(compound.classification)} color={classificationColor(compound.classification)} size="small" sx={{ mr: 1 }} />
+                <Typography variant="body2" color="text.secondary">
+                  Drug-likeness: {compound.drug_likeness?.toFixed(3)}
+                </Typography>
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                {/* Property Profile */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" gutterBottom>Molecular Properties</Typography>
+                  <Table size="small">
+                    <TableBody>
+                      <TableRow><TableCell>Molecular Weight</TableCell><TableCell>{compound.molecular_weight?.toFixed(2)} Da</TableCell></TableRow>
+                      <TableRow><TableCell>logP</TableCell><TableCell>{compound.logp?.toFixed(2)}</TableCell></TableRow>
+                      <TableRow><TableCell>H-Bond Donors</TableCell><TableCell>{compound.hbd}</TableCell></TableRow>
+                      <TableRow><TableCell>H-Bond Acceptors</TableCell><TableCell>{compound.hba}</TableCell></TableRow>
+                      <TableRow><TableCell>TPSA</TableCell><TableCell>{compound.tpsa?.toFixed(1)} A&sup2;</TableCell></TableRow>
+                      <TableRow><TableCell>Rotatable Bonds</TableCell><TableCell>{compound.rotatable_bonds}</TableCell></TableRow>
+                      <TableRow><TableCell>Aromatic Rings</TableCell><TableCell>{compound.aromatic_rings}</TableCell></TableRow>
+                      <TableRow><TableCell>Fraction sp3</TableCell><TableCell>{compound.fraction_csp3?.toFixed(3)}</TableCell></TableRow>
+                      <TableRow><TableCell>Heavy Atoms</TableCell><TableCell>{compound.heavy_atom_count}</TableCell></TableRow>
+                    </TableBody>
+                  </Table>
+                </Grid>
+
+                {/* Scores & Flags */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" gutterBottom>Drug Development Profile</Typography>
+                  <Table size="small">
+                    <TableBody>
+                      <TableRow><TableCell>QED Score</TableCell><TableCell>{compound.qed?.toFixed(4)}</TableCell></TableRow>
+                      <TableRow><TableCell>SA Score</TableCell><TableCell>{compound.synthetic_accessibility?.toFixed(2)} / 10</TableCell></TableRow>
+                      <TableRow>
+                        <TableCell>Lipinski</TableCell>
+                        <TableCell>
+                          <Chip label={compound.lipinski_pass ? 'Pass' : 'Fail'} color={compound.lipinski_pass ? 'success' : 'error'} size="small" />
+                          {' '}({compound.lipinski_violations} violation{compound.lipinski_violations !== 1 ? 's' : ''})
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Lead-like</TableCell>
+                        <TableCell><Chip label={compound.lead_like ? 'Yes' : 'No'} color={compound.lead_like ? 'success' : 'default'} size="small" /></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Veber Rules</TableCell>
+                        <TableCell><Chip label={compound.veber_pass ? 'Pass' : 'Fail'} color={compound.veber_pass ? 'success' : 'warning'} size="small" /></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>PAINS</TableCell>
+                        <TableCell>
+                          <Chip label={compound.pains_pass ? 'Clean' : 'Alert'} color={compound.pains_pass ? 'success' : 'error'} size="small" />
+                          {compound.pains_alerts?.length > 0 && (
+                            <Typography variant="caption" color="error" sx={{ ml: 1 }}>{compound.pains_alerts.join(', ')}</Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+
+                  {compound.admet_flags?.length > 0 && (
+                    <Box sx={{ mt: 1 }}>
+                      <Typography variant="caption" color="text.secondary">ADMET Flags:</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                        {compound.admet_flags.map((flag, i) => (
+                          <Chip key={i} label={flag.replace(/_/g, ' ')} size="small" color="warning" variant="outlined" />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+
+                  {compound.structural_alerts?.length > 0 && (
+                    <Box sx={{ mt: 1 }}>
+                      <Typography variant="caption" color="error">Structural Alerts:</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                        {compound.structural_alerts.map((alert, i) => (
+                          <Chip key={i} label={alert.replace(/_/g, ' ')} size="small" color="error" variant="outlined" />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </Grid>
+
+                {/* Pareto objectives */}
+                {compound.pareto_objectives && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" gutterBottom>Pareto Multi-Objective Scores</Typography>
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                      {Object.entries(compound.pareto_objectives).map(([key, val]) => (
+                        <Paper key={key} sx={{ p: 1, px: 2, textAlign: 'center' }}>
+                          <Typography variant="h6">{val?.toFixed(3)}</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{key}</Typography>
+                        </Paper>
+                      ))}
+                      <Paper sx={{ p: 1, px: 2, textAlign: 'center', bgcolor: compound.pareto_front === 0 ? 'success.dark' : 'grey.800', color: 'white' }}>
+                        <Typography variant="h6">Front {compound.pareto_front}</Typography>
+                        <Typography variant="caption">Pareto Rank #{compound.pareto_rank}</Typography>
+                      </Paper>
+                    </Box>
+                  </Grid>
+                )}
+
+                {/* Upstream Data */}
+                {(compound.docking_score || compound.stability_verdict || compound.interaction_energy) && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" gutterBottom>Upstream Pipeline Data</Typography>
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                      {compound.docking_score != null && (
+                        <Chip label={`Docking: ${compound.docking_score.toFixed(2)} kcal/mol`} size="small" variant="outlined" />
+                      )}
+                      {compound.stability_verdict && (
+                        <Chip label={`Stability: ${compound.stability_verdict}`} size="small"
+                          color={compound.stability_verdict.toLowerCase() === 'stable' ? 'success' : 'warning'} variant="outlined" />
+                      )}
+                      {compound.interaction_energy != null && (
+                        <Chip label={`Interaction: ${compound.interaction_energy.toFixed(2)} kcal/mol`} size="small" variant="outlined" />
+                      )}
+                    </Box>
+                  </Grid>
+                )}
+
+                {/* Bioisosteric Replacement Suggestions */}
+                {compound.bioisostere_suggestions?.length > 0 && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" gutterBottom>Bioisosteric Replacements</Typography>
+                    <TableContainer>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Original</TableCell>
+                            <TableCell>Replacement</TableCell>
+                            <TableCell>Product SMILES</TableCell>
+                            <TableCell>&Delta; QED</TableCell>
+                            <TableCell>&Delta; SA</TableCell>
+                            <TableCell>Lipinski</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {compound.bioisostere_suggestions.map((bs, bsi) => (
+                            <TableRow key={bsi}>
+                              <TableCell>{bs.original_group}</TableCell>
+                              <TableCell>{bs.replacement_group}</TableCell>
+                              <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.65rem' }}>{bs.product_smiles?.slice(0, 40)}{bs.product_smiles?.length > 40 ? '...' : ''}</Typography></TableCell>
+                              <TableCell>
+                                <Typography variant="body2" color={bs.predicted_qed_change > 0 ? 'success.main' : bs.predicted_qed_change < 0 ? 'error.main' : 'text.secondary'}>
+                                  {bs.predicted_qed_change > 0 ? '+' : ''}{bs.predicted_qed_change?.toFixed(3)}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>
+                                <Typography variant="body2" color={bs.predicted_sa_change < 0 ? 'success.main' : bs.predicted_sa_change > 0 ? 'error.main' : 'text.secondary'}>
+                                  {bs.predicted_sa_change > 0 ? '+' : ''}{bs.predicted_sa_change?.toFixed(1)}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>
+                                <Chip label={bs.lipinski_pass ? 'Pass' : 'Fail'} size="small" color={bs.lipinski_pass ? 'success' : 'error'} variant="outlined" />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Grid>
+                )}
+
+                {/* Pharmacophore features */}
+                {data.pharmacophore_data?.pharmacophore_models?.find(pm => pm.compound_name === compound.name) && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" gutterBottom>Pharmacophore Features</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {data.pharmacophore_data.pharmacophore_models
+                        .find(pm => pm.compound_name === compound.name)
+                        ?.features?.map((f, fi) => (
+                          <Chip key={fi} label={`${f.type} (${f.position?.map(p => p.toFixed(1)).join(', ')})`}
+                            size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
+                        ))}
+                    </Box>
+                  </Grid>
+                )}
+
+                {/* Suggestions */}
+                {compound.suggestions?.length > 0 && (
+                  <Grid item xs={12}>
+                    <Alert severity={compound.classification === 'advance' ? 'success' : compound.classification === 'optimize' ? 'warning' : 'error'} sx={{ mt: 1 }}>
+                      <Typography variant="subtitle2" gutterBottom>Optimization Suggestions</Typography>
+                      {compound.suggestions.map((suggestion, i) => (
+                        <Typography key={i} variant="body2" sx={{ mb: 0.5 }}>&bull; {suggestion}</Typography>
+                      ))}
+                    </Alert>
+                  </Grid>
+                )}
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+        ))}
+
+        {/* ===== Generated Analogs Section ===== */}
+        {data.analogs_generated?.length > 0 && (
+          <Accordion sx={{ mb: 2, mt: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Generated Analogs</Typography>
+                <Chip label={`${data.analogs_generated.length} analogs`} size="small" color="info" variant="outlined" />
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Near-neighbor analogs generated via fragment growing and bioisosteric replacement from top parent compounds.
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Parent</TableCell>
+                      <TableCell>Analog SMILES</TableCell>
+                      <TableCell>Method</TableCell>
+                      <TableCell>QED</TableCell>
+                      <TableCell>SA</TableCell>
+                      <TableCell>MW</TableCell>
+                      <TableCell>Improvement</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {data.analogs_generated.map((analog, ai) => (
+                      <TableRow key={ai}>
+                        <TableCell><Typography variant="body2" fontWeight="bold">{analog.parent_name}</Typography></TableCell>
+                        <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.65rem' }}>{analog.analog_smiles?.slice(0, 45)}{analog.analog_smiles?.length > 45 ? '...' : ''}</Typography></TableCell>
+                        <TableCell><Chip label={analog.method?.replace(/_/g, ' ')} size="small" variant="outlined" sx={{ fontSize: '0.6rem' }} /></TableCell>
+                        <TableCell>{analog.qed?.toFixed(3)}</TableCell>
+                        <TableCell>{analog.sa_score?.toFixed(1)}</TableCell>
+                        <TableCell>{analog.molecular_weight?.toFixed(0)}</TableCell>
+                        <TableCell><Typography variant="caption">{analog.predicted_improvement}</Typography></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </AccordionDetails>
+          </Accordion>
+        )}
+
+        {/* ===== Consensus Pharmacophore ===== */}
+        {data.pharmacophore_data?.consensus_pharmacophore && (
+          <Accordion sx={{ mb: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Consensus Pharmacophore</Typography>
+                <Chip label={`${data.pharmacophore_data.consensus_pharmacophore.features?.length || 0} features`} size="small" variant="outlined" />
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Pharmacophore features conserved across {data.pharmacophore_data.consensus_pharmacophore.compounds_used} top compounds (within 2&Aring; tolerance).
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Feature Type</TableCell>
+                      <TableCell>Position (x, y, z)</TableCell>
+                      <TableCell>Radius</TableCell>
+                      <TableCell>Contributing Compounds</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {data.pharmacophore_data.consensus_pharmacophore.features?.map((f, fi) => (
+                      <TableRow key={fi}>
+                        <TableCell><Chip label={f.type} size="small" variant="outlined" /></TableCell>
+                        <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace' }}>({f.position?.map(p => p.toFixed(1)).join(', ')})</Typography></TableCell>
+                        <TableCell>{f.radius?.toFixed(1)} &Aring;</TableCell>
+                        <TableCell><Typography variant="caption">{f.compounds_contributing?.join(', ')}</Typography></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </AccordionDetails>
+          </Accordion>
+        )}
+
+        {/* Failed compounds */}
+        {data.failed_compounds?.length > 0 && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            <Typography variant="subtitle2">{data.failed_compounds.length} compound(s) failed analysis:</Typography>
+            {data.failed_compounds.map((c, i) => (
+              <Typography key={i} variant="body2">&bull; {c.name}: {c.error}</Typography>
             ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Box>
-  );
+          </Alert>
+        )}
+
+        {/* Blockchain Provenance Record */}
+        <BlockchainProvenanceCard blockchain={data?.blockchain} />
+
+        {data.total_computation_time_seconds != null && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2, textAlign: 'right' }}>
+            Analysis completed in {data.total_computation_time_seconds}s
+          </Typography>
+        )}
+      </Box>
+    );
+  };
 
   const renderVirtualScreeningResults = (data) => {
     // Handle both 'completed' and 'success' status values
@@ -1852,6 +2295,74 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
             )}
           </Box>
         </Paper>
+
+        {/* Ligand Preparation Details */}
+        {isVinaDocking && data.ligand_preparation && (
+          <Accordion sx={{ mb: 3, borderRadius: 2, '&:before': { display: 'none' } }} defaultExpanded={false}>
+            <AccordionSummary expandIcon={<ExpandMore />} sx={{ borderRadius: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Ligand Preparation</Typography>
+                <Chip
+                  label={`${data.ligand_preparation.compounds_passed_validation} prepared`}
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                />
+                {data.ligand_preparation.compounds_failed_validation > 0 && (
+                  <Chip
+                    label={`${data.ligand_preparation.compounds_failed_validation} filtered`}
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                  />
+                )}
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 4, mb: 2 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Protonation pH</Typography>
+                  <Typography variant="body1" fontWeight="bold">{data.ligand_preparation.protonation_pH}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Conformers per Ligand</Typography>
+                  <Typography variant="body1" fontWeight="bold">{data.ligand_preparation.conformers_generated}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Force Field</Typography>
+                  <Typography variant="body1" fontWeight="bold">{data.ligand_preparation.force_field}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Minimization Iterations</Typography>
+                  <Typography variant="body1" fontWeight="bold">{data.ligand_preparation.max_iterations}</Typography>
+                </Box>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                Preparation Pipeline
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                {data.ligand_preparation.steps.map((step, i) => (
+                  <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CheckCircle sx={{ fontSize: 16, color: '#16a34a' }} />
+                    <Typography variant="body2">{step}</Typography>
+                  </Box>
+                ))}
+              </Box>
+              {data.ligand_preparation.validation_thresholds && (
+                <Box sx={{ mt: 2, p: 1.5, bgcolor: '#f8fafc', borderRadius: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                    Validation Thresholds
+                  </Typography>
+                  <Typography variant="body2">
+                    MW &le; {data.ligand_preparation.validation_thresholds.max_mw} Da &nbsp;&bull;&nbsp;
+                    Heavy atoms &le; {data.ligand_preparation.validation_thresholds.max_heavy_atoms} &nbsp;&bull;&nbsp;
+                    Rotatable bonds &le; {data.ligand_preparation.validation_thresholds.max_rotatable_bonds}
+                  </Typography>
+                </Box>
+              )}
+            </AccordionDetails>
+          </Accordion>
+        )}
 
         {/* Top compounds table */}
         <Paper sx={{ p: 3, borderRadius: 2 }}>
@@ -1998,88 +2509,29 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
           )}
 
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2, flexWrap: 'wrap' }}>
-            <Button variant="contained" startIcon={<Download />} onClick={handleDownloadResults} sx={{ backgroundColor: '#1976d2', '&:hover': { backgroundColor: '#1565c0' } }}>
-              Download Report
-            </Button>
-
-            {!blockchainCommitted ? (
-              <>
-                <Button
-                  variant="contained"
-                  color="success"
-                  onClick={commitToBlockchain}
-                  disabled={commitLoading}
-                  sx={{
-                    background: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)',
-                    color: 'white',
-                    '&:hover': { background: 'linear-gradient(45deg, #388E3C 30%, #689F38 90%)' },
-                  }}
-                >
-                  {commitLoading ? <CircularProgress size={24} /> : 'Commit to Blockchain'}
-                </Button>
-                {onProceedWithoutCommitting && (
-                  <Button
-                    variant="outlined"
-                    onClick={() => onProceedWithoutCommitting(stage, results)}
-                    sx={{
-                      borderColor: '#FF9800',
-                      color: '#FF9800',
-                      '&:hover': { borderColor: '#F57C00', backgroundColor: 'rgba(255, 152, 0, 0.08)' },
-                    }}
-                  >
-                    Proceed Without Committing
-                  </Button>
-                )}
-              </>
-            ) : (
-              <Button
-                variant="contained"
-                color="info"
-                onClick={verifyResults}
-                disabled={verifyLoading}
-                sx={{
-                  background: 'linear-gradient(45deg, #00BCD4 30%, #009688 90%)',
-                  color: 'white',
-                  '&:hover': { background: 'linear-gradient(45deg, #0097A7 30%, #00796B 90%)' },
-                }}
-              >
-                {verifyLoading ? <CircularProgress size={24} /> : 'Verify'}
-              </Button>
-            )}
+            <DownloadButtonGroup />
           </Box>
 
-          {/* Blockchain & IPFS records for virtual screening */}
-          {blockchainCommitted && ipfsHash && blockchainTxHash && (
-            <Paper sx={{ p: 2, mt: 2, backgroundColor: 'rgba(46, 125, 50, 0.05)', border: '1px solid rgba(46, 125, 50, 0.2)' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-                Blockchain & IPFS Records
-              </Typography>
-              <Box sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                <Typography variant="body2">
-                  <strong>IPFS Hash:</strong>{' '}
-                  <a href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>
-                    {ipfsHash}
-                  </a>
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Blockchain Tx:</strong>{' '}
-                  <a href={`https://nsllab-kit.onrender.com/purechain/api/v1/tx/${blockchainTxHash}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>
-                    {blockchainTxHash}
-                  </a>
-                  {' | '}
-                  <a href={`https://nsllab-kit.onrender.com/purechain/api/v1/tx/${blockchainTxHash}/receipt`} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>
-                    Receipt
-                  </a>
-                </Typography>
-              </Box>
-              {verificationResult && (
-                <Box sx={{ mt: 1, p: 1, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 1 }}>
-                  <Typography variant="body2" color="success.main">
-                    Verified on block #{verificationResult.blockNumber} at {new Date(verificationResult.timestamp).toLocaleString()}
-                  </Typography>
-                </Box>
-              )}
-            </Paper>
+          {/* Blockchain Provenance Record */}
+          <BlockchainProvenanceCard blockchain={data?.blockchain} />
+
+          {onProceedToNextStage && (
+            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+              <Button
+                variant="contained"
+                size="large"
+                endIcon={<NavigateNext />}
+                onClick={() => onProceedToNextStage('molecular_dynamics')}
+                sx={{
+                  background: 'linear-gradient(45deg, #4CAF50 30%, #66BB6A 90%)',
+                  color: 'white',
+                  px: 4,
+                  '&:hover': { background: 'linear-gradient(45deg, #388E3C 30%, #4CAF50 90%)' },
+                }}
+              >
+                Proceed to Molecular Dynamics
+              </Button>
+            </Box>
           )}
         </Paper>
 
@@ -2134,29 +2586,33 @@ function WorkflowResults({ results, stage, activeTab = 0, workflow = null, onPro
     );
   }
 
-  switch (stage) {
-    case 'structure_preparation':
-      return renderStructurePreparation(results);
-    case 'binding_site_analysis':
-    case 'completed':
-      return renderBindingSites(results);
-    case 'virtual_screening':
-      return results.virtual_screening ? renderVirtualScreeningResults(results.virtual_screening) : renderStageResults();
-    case 'molecular_dynamics':
-      return results.molecular_dynamics ? renderMDResults(results.molecular_dynamics) : renderStageResults();
-    case 'lead_optimization':
-      return results.lead_optimization ? renderOptimizationResults(results.lead_optimization) : renderStageResults();
-    default:
-      return (
-        <Paper sx={{ p: 4, textAlign: 'center', mt: 4 }}>
-          <ErrorOutline sx={{ fontSize: 40, color: 'error.main', mb: 2 }} />
-          <Typography color="error">Unknown or invalid workflow stage: '{stage}'</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Please check the workflow status and try again.
-          </Typography>
-        </Paper>
-      );
-  }
+  const content = (() => {
+    switch (stage) {
+      case 'structure_preparation':
+        return renderStructurePreparation(results);
+      case 'binding_site_analysis':
+      case 'completed':
+        return renderBindingSites(results);
+      case 'virtual_screening':
+        return results.virtual_screening ? renderVirtualScreeningResults(results.virtual_screening) : renderStageResults();
+      case 'molecular_dynamics':
+        return results.molecular_dynamics ? renderMDResults(results.molecular_dynamics) : renderStageResults();
+      case 'lead_optimization':
+        return results.lead_optimization ? renderOptimizationResults(results.lead_optimization) : renderStageResults();
+      default:
+        return (
+          <Paper sx={{ p: 4, textAlign: 'center', mt: 4 }}>
+            <ErrorOutline sx={{ fontSize: 40, color: 'error.main', mb: 2 }} />
+            <Typography color="error">Unknown or invalid workflow stage: '{stage}'</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Please check the workflow status and try again.
+            </Typography>
+          </Paper>
+        );
+    }
+  })();
+
+  return <div ref={resultsRef}>{content}</div>;
 }
 
 export default WorkflowResults;

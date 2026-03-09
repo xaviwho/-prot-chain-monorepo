@@ -22,7 +22,7 @@ const axios = require('axios');
 // Configuration
 const CONFIG = {
     API_URL: process.env.API_URL || 'http://localhost:8082',
-    PURECHAIN_RPC: process.env.PURECHAIN_RPC || 'https://purechainnode.com:8547',
+    PURECHAIN_RPC: process.env.PURECHAIN_RPC || 'https://purechainnode.com',
     NUM_TRANSACTIONS: parseInt(process.env.NUM_TRANSACTIONS) || 100,
     VALIDATOR_CONFIGS: [1, 3, 5, 7, 10], // Number of validators to test (reviewer requested 5-10)
     SIGNATURE_DELAY_MS: 15, // Simulated delay per additional validator signature

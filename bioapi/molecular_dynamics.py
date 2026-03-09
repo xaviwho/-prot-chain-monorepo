@@ -1,26 +1,30 @@
 """
 Molecular Dynamics Simulation Module for ProtChain BioAPI
 
-Performs short MD-like energy minimisation and stability analysis of
-protein-ligand complexes using the top compounds from virtual screening.
+Performs MD simulation and stability analysis of protein-ligand complexes
+using the top compounds from virtual screening.
+
+When OpenMM is installed, uses genuine molecular dynamics:
+- AMBER ff14SB protein force field
+- GAFF2 + AM1-BCC charges for ligands (via openmmforcefields)
+- GBn2 implicit solvent (GBSA-OBC2)
+- Langevin thermostat (proper NVT ensemble)
+- Protocol: energy minimisation → NVT equilibration → production MD
+
+When OpenMM is NOT installed, falls back to analytical energy minimisation
+using Lennard-Jones, Coulomb, and H-bond potentials (screening-grade).
 
 Pipeline:
 1. Parse PDB structure and extract binding-site residues
 2. For each top compound, build a ligand-in-pocket model
-3. Run iterative energy minimisation (steepest descent + conjugate gradient)
+3. Run MD simulation (OpenMM) or energy minimisation (fallback)
 4. Compute per-compound stability metrics:
    - RMSD (root-mean-square deviation from initial pose)
    - Interaction energy (van der Waals + electrostatic + H-bond)
    - RMSF per residue (root-mean-square fluctuation)
    - Radius of gyration
-   - Solvent-accessible surface area estimate
-5. Generate time-series "trajectory" snapshots across minimisation steps
+5. Generate time-series trajectory snapshots
 6. Return ranked compounds with stability verdicts and full metrics
-
-Uses RDKit for ligand handling and NumPy for numerical simulation.
-No external MD engine (OpenMM / GROMACS) required — the force-field
-calculations are performed analytically using validated biophysics
-equations, suitable for rapid screening-grade stability assessment.
 """
 
 import logging
@@ -31,6 +35,17 @@ from typing import Dict, Any, List, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Check for OpenMM availability (following molecular_docking.py pattern)
+OPENMM_AVAILABLE = False
+try:
+    from openmm_engine import OpenMMSimulator
+    OPENMM_AVAILABLE = True
+    logger.info("OpenMM engine available — will use genuine MD simulation")
+except ImportError:
+    logger.warning(
+        "OpenMM not installed — falling back to analytical energy minimisation"
+    )
 
 # ---------------------------------------------------------------------------
 # Constants & force-field parameters
@@ -164,11 +179,23 @@ def _hbond_energy(r: float, donor_Z: int, acceptor_Z: int) -> float:
 
 class MolecularDynamicsEngine:
     """
-    Performs energy minimisation and stability analysis of protein-ligand
-    complexes. This is a physics-based rapid MD surrogate that computes
-    real interaction energies using Lennard-Jones, Coulomb, and H-bond
-    potentials.
+    Performs MD simulation and stability analysis of protein-ligand complexes.
+
+    When OpenMM is available: genuine NVT molecular dynamics with AMBER ff14SB,
+    GAFF2 ligand parameterisation, and GBn2 implicit solvent.
+
+    When OpenMM is not available: falls back to analytical energy minimisation
+    using Lennard-Jones, Coulomb, and H-bond potentials.
     """
+
+    def __init__(self):
+        self._openmm_sim = None
+
+    def _get_openmm_simulator(self) -> Optional['OpenMMSimulator']:
+        """Lazy-initialise the OpenMM simulator."""
+        if self._openmm_sim is None and OPENMM_AVAILABLE:
+            self._openmm_sim = OpenMMSimulator()
+        return self._openmm_sim
 
     def simulate(
         self,
@@ -180,25 +207,52 @@ class MolecularDynamicsEngine:
         max_compounds: int = 10,
     ) -> Dict[str, Any]:
         """Run MD stability analysis for top compounds from virtual screening."""
+        if OPENMM_AVAILABLE:
+            try:
+                return self._simulate_openmm(
+                    pdb_content, binding_site, top_compounds,
+                    temperature, n_steps, max_compounds,
+                )
+            except Exception as e:
+                logger.error(f"OpenMM simulation failed, falling back to analytical: {e}")
+
+        return self._simulate_analytical(
+            pdb_content, binding_site, top_compounds,
+            temperature, n_steps, max_compounds,
+        )
+
+    # ==================================================================
+    # OpenMM-powered simulation
+    # ==================================================================
+    def _simulate_openmm(
+        self,
+        pdb_content: str,
+        binding_site: Dict[str, Any],
+        top_compounds: List[Dict[str, Any]],
+        temperature: float,
+        n_steps: int,
+        max_compounds: int,
+    ) -> Dict[str, Any]:
+        """Genuine MD simulation via OpenMM with AMBER ff14SB + GAFF2 + GBn2."""
         start_time = time.time()
-        logger.info(f"Starting MD simulation: {len(top_compounds)} compounds, {n_steps} steps, {temperature}K")
+        TIME_BUDGET = 1080  # 18 minutes (leave 2 min buffer)
 
-        Chem, AllChem, Descriptors, _ = _import_rdkit()
+        sim = self._get_openmm_simulator()
+        logger.info(
+            f"Starting OpenMM MD: {len(top_compounds)} compounds, "
+            f"{n_steps} user steps, {temperature}K"
+        )
 
-        # Parse protein atoms
+        # Parse protein atoms for analytical post-analysis
         protein_atoms = _parse_pdb_atoms(pdb_content)
         if not protein_atoms:
             raise ValueError("No atoms found in PDB content")
 
         center = binding_site.get("center", {"x": 0, "y": 0, "z": 0})
         pocket_atoms = _get_binding_residues(protein_atoms, center, radius=12.0)
-        logger.info(f"Binding pocket: {len(pocket_atoms)} atoms within 12Å of center")
-
-        # Build pocket coordinate array and properties
         pocket_coords = np.array([[a["x"], a["y"], a["z"]] for a in pocket_atoms])
         pocket_atomic_nums = [_element_to_atomic_num(a["element"]) for a in pocket_atoms]
 
-        # Identify unique pocket residues
         pocket_residues = {}
         for a in pocket_atoms:
             key = f"{a['resname']}_{a['resseq']}_{a['chain']}"
@@ -211,7 +265,243 @@ class MolecularDynamicsEngine:
                 }
             pocket_residues[key]["atoms"].append(a)
 
-        # Process compounds (limit to max_compounds)
+        # Prepare protein once (reused for all compounds)
+        logger.info("  Preparing protein topology...")
+        protein_top, protein_pos = sim.prepare_protein(pdb_content)
+
+        # Determine time budget per compound
+        compounds_to_process = top_compounds[:max_compounds]
+        n_compounds = len(compounds_to_process)
+        time_per_compound = TIME_BUDGET / max(n_compounds, 1)
+
+        # Determine simulation length based on time budget
+        if time_per_compound > 150:
+            equil_steps, prod_steps = 25000, 100000  # 50ps + 200ps
+        elif time_per_compound > 90:
+            equil_steps, prod_steps = 12500, 50000   # 25ps + 100ps
+        else:
+            equil_steps, prod_steps = 5000, 25000    # 10ps + 50ps
+
+        total_sim_steps = equil_steps + prod_steps
+        snapshot_interval = max(prod_steps // 20, 1000)  # ~20 snapshots
+
+        logger.info(
+            f"  Time budget: {time_per_compound:.0f}s/compound, "
+            f"equil={equil_steps}, prod={prod_steps}"
+        )
+
+        compound_results = []
+        trajectory_data = []
+
+        for idx, comp in enumerate(compounds_to_process):
+            comp_name = comp.get("name", f"compound_{idx + 1}")
+            smiles = comp.get("smiles", "")
+            if not smiles:
+                logger.warning(f"Compound {comp_name}: no SMILES, skipping")
+                continue
+
+            comp_start = time.time()
+
+            try:
+                # Parameterise ligand
+                lig_mol, lig_coords = sim.parameterize_ligand(smiles, comp_name)
+
+                # Build combined system
+                sim_data = sim.build_system(
+                    protein_top, protein_pos,
+                    lig_mol, lig_coords,
+                    center, temperature,
+                )
+
+                # Run simulation
+                md_result = sim.run_simulation(
+                    sim_data,
+                    equil_steps=equil_steps,
+                    prod_steps=prod_steps,
+                    snapshot_interval=snapshot_interval,
+                )
+
+                # Extract final ligand coordinates in Angstroms
+                final_lig_coords = sim.extract_ligand_coords_angstrom(
+                    md_result["final_positions"],
+                    md_result["ligand_atom_indices"],
+                )
+                minimized_lig_coords = sim.extract_ligand_coords_angstrom(
+                    md_result["minimized_positions"],
+                    md_result["ligand_atom_indices"],
+                )
+
+                # Get ligand atomic numbers
+                Chem, AllChem = _import_rdkit()[:2]
+                lig_atomic_nums = [
+                    lig_mol.GetAtomWithIdx(i).GetAtomicNum()
+                    for i in range(lig_mol.GetNumAtoms())
+                ]
+
+                # Compute analytics using existing analytical functions
+                final_rmsd = float(np.sqrt(np.mean(
+                    np.sum((final_lig_coords - minimized_lig_coords) ** 2, axis=1)
+                )))
+                rg = sim.compute_radius_of_gyration(final_lig_coords)
+                energy_breakdown = self._compute_energy_breakdown(
+                    final_lig_coords, lig_atomic_nums,
+                    pocket_coords, pocket_atomic_nums,
+                )
+                residue_interactions = self._compute_residue_interactions(
+                    final_lig_coords, lig_atomic_nums, pocket_residues,
+                )
+                final_energy = energy_breakdown["total_kcal"]
+                initial_energy = md_result["minimized_energy"]
+                energy_change = final_energy - initial_energy
+                stability = self._classify_stability(
+                    final_rmsd, final_energy, energy_change
+                )
+
+                compound_result = {
+                    "name": comp_name,
+                    "smiles": smiles,
+                    "status": "completed",
+                    "rmsd_angstrom": round(final_rmsd, 4),
+                    "initial_energy_kcal": round(initial_energy, 3),
+                    "interaction_energy_kcal": round(final_energy, 3),
+                    "energy_change_kcal": round(energy_change, 3),
+                    "radius_of_gyration_angstrom": round(rg, 3),
+                    "stability_verdict": stability,
+                    "energy_breakdown": energy_breakdown,
+                    "residue_interactions": residue_interactions[:10],
+                    "n_ligand_atoms": lig_mol.GetNumAtoms(),
+                    "vina_score_kcal": comp.get("vina_score_kcal"),
+                    "predicted_binding_affinity_kcal": comp.get("predicted_binding_affinity_kcal"),
+                    "category": comp.get("category", ""),
+                    "molecular_weight": comp.get("molecular_weight", 0),
+                }
+
+                # Build trajectory in expected schema
+                energy_series = [round(e, 2) for e in md_result["energies"]]
+                rmsd_series = [round(r, 4) for r in md_result["rmsds"]]
+                # Downsample to ~50 points for frontend
+                step_es = max(1, len(energy_series) // 50)
+                step_rs = max(1, len(rmsd_series) // 50)
+                converged = (
+                    len(md_result["energies"]) > 5
+                    and np.std(md_result["energies"][-max(3, len(md_result["energies"]) // 5):]) < 5.0
+                    and final_rmsd < 5.0
+                )
+                trajectory = {
+                    "compound_name": comp_name,
+                    "snapshots": md_result["snapshots"],
+                    "energy_series": energy_series[::step_es],
+                    "rmsd_series": rmsd_series[::step_rs],
+                    "converged": converged,
+                }
+
+                compound_results.append(compound_result)
+                trajectory_data.append(trajectory)
+                comp_elapsed = time.time() - comp_start
+                logger.info(
+                    f"  Compound {idx + 1}/{n_compounds} ({comp_name}): "
+                    f"RMSD={final_rmsd:.2f}Å, ΔG={final_energy:.2f} kcal/mol "
+                    f"[{comp_elapsed:.1f}s]"
+                )
+
+                # Adaptive time budgeting after first compound
+                if idx == 0 and n_compounds > 1:
+                    remaining_time = TIME_BUDGET - (time.time() - start_time)
+                    remaining_compounds = n_compounds - 1
+                    adjusted_time = remaining_time / remaining_compounds
+                    if adjusted_time < comp_elapsed * 0.7:
+                        scale = adjusted_time / max(comp_elapsed, 1)
+                        prod_steps = max(int(prod_steps * scale), 10000)
+                        snapshot_interval = max(prod_steps // 20, 500)
+                        logger.info(
+                            f"  Adjusted prod_steps to {prod_steps} "
+                            f"(time constraint)"
+                        )
+
+            except Exception as e:
+                logger.error(
+                    f"  Compound {comp_name} OpenMM failed: {e}, "
+                    f"trying analytical fallback"
+                )
+                # Per-compound fallback to analytical engine
+                try:
+                    Chem, AllChem, Descriptors, _ = _import_rdkit()
+                    fallback = self._simulate_compound(
+                        Chem, AllChem, Descriptors,
+                        comp, comp_name, smiles,
+                        pocket_coords, pocket_atomic_nums, pocket_residues,
+                        center, temperature, n_steps,
+                    )
+                    compound_results.append(fallback["compound"])
+                    trajectory_data.append(fallback["trajectory"])
+                except Exception as e2:
+                    logger.error(f"  Analytical fallback also failed: {e2}")
+                    compound_results.append({
+                        "name": comp_name,
+                        "smiles": smiles,
+                        "status": "failed",
+                        "error": str(e2),
+                    })
+
+            # Check overall time budget
+            elapsed = time.time() - start_time
+            if elapsed > TIME_BUDGET and idx < n_compounds - 1:
+                logger.warning(
+                    f"  Time budget exceeded ({elapsed:.0f}s), "
+                    f"skipping remaining {n_compounds - idx - 1} compounds"
+                )
+                break
+
+        # Assemble final result (same schema as analytical)
+        return self._assemble_results(
+            compound_results, trajectory_data,
+            temperature, total_sim_steps, center,
+            pocket_atoms, pocket_residues, start_time,
+            method="openmm_amber_ff14sb_gbn2",
+        )
+
+    # ==================================================================
+    # Analytical fallback (original code)
+    # ==================================================================
+    def _simulate_analytical(
+        self,
+        pdb_content: str,
+        binding_site: Dict[str, Any],
+        top_compounds: List[Dict[str, Any]],
+        temperature: float,
+        n_steps: int,
+        max_compounds: int,
+    ) -> Dict[str, Any]:
+        """Analytical energy minimisation fallback (original engine)."""
+        start_time = time.time()
+        logger.info(f"Starting analytical MD: {len(top_compounds)} compounds, {n_steps} steps, {temperature}K")
+
+        Chem, AllChem, Descriptors, _ = _import_rdkit()
+
+        # Parse protein atoms
+        protein_atoms = _parse_pdb_atoms(pdb_content)
+        if not protein_atoms:
+            raise ValueError("No atoms found in PDB content")
+
+        center = binding_site.get("center", {"x": 0, "y": 0, "z": 0})
+        pocket_atoms = _get_binding_residues(protein_atoms, center, radius=12.0)
+        logger.info(f"Binding pocket: {len(pocket_atoms)} atoms within 12Å of center")
+
+        pocket_coords = np.array([[a["x"], a["y"], a["z"]] for a in pocket_atoms])
+        pocket_atomic_nums = [_element_to_atomic_num(a["element"]) for a in pocket_atoms]
+
+        pocket_residues = {}
+        for a in pocket_atoms:
+            key = f"{a['resname']}_{a['resseq']}_{a['chain']}"
+            if key not in pocket_residues:
+                pocket_residues[key] = {
+                    "resname": a["resname"],
+                    "resseq": a["resseq"],
+                    "chain": a["chain"],
+                    "atoms": [],
+                }
+            pocket_residues[key]["atoms"].append(a)
+
         compounds_to_process = top_compounds[:max_compounds]
         compound_results = []
         trajectory_data = []
@@ -246,32 +536,50 @@ class MolecularDynamicsEngine:
                     "error": str(e),
                 })
 
-        # Sort by interaction energy (more negative = better)
+        return self._assemble_results(
+            compound_results, trajectory_data,
+            temperature, n_steps, center,
+            pocket_atoms, pocket_residues, start_time,
+            method="physics_based_analytical_minimisation",
+        )
+
+    # ==================================================================
+    # Shared result assembly
+    # ==================================================================
+    def _assemble_results(
+        self,
+        compound_results: List[Dict],
+        trajectory_data: List[Dict],
+        temperature: float,
+        total_steps: int,
+        center: Dict,
+        pocket_atoms: List[Dict],
+        pocket_residues: Dict,
+        start_time: float,
+        method: str = "physics_based_md_simulation",
+    ) -> Dict[str, Any]:
+        """Assemble the final result dict in the schema the frontend expects."""
         successful = [c for c in compound_results if c.get("status") != "failed"]
         successful.sort(key=lambda c: c.get("interaction_energy_kcal", 0))
         failed = [c for c in compound_results if c.get("status") == "failed"]
 
-        # Assign ranks
         for rank, comp in enumerate(successful, 1):
             comp["rank"] = rank
 
-        # Compute global statistics
         all_rmsd = [c["rmsd_angstrom"] for c in successful]
         all_energies = [c["interaction_energy_kcal"] for c in successful]
         stable_count = sum(1 for c in successful if c.get("stability_verdict") == "stable")
 
         total_time = round(time.time() - start_time, 2)
-
-        # Per-residue average RMSF across all compounds
         residue_rmsf_summary = self._aggregate_residue_rmsf(successful)
 
         result = {
             "status": "success",
-            "method": "physics_based_md_simulation",
+            "method": method,
             "temperature_kelvin": temperature,
-            "simulation_steps": n_steps,
+            "simulation_steps": total_steps,
             "timestep_ps": DEFAULT_TIMESTEP,
-            "simulation_time_ns": round(n_steps * DEFAULT_TIMESTEP / 1000.0, 4),
+            "simulation_time_ns": round(total_steps * DEFAULT_TIMESTEP / 1000.0, 4),
             "compounds_simulated": len(successful),
             "compounds_failed": len(failed),
             "stable_compounds": stable_count,

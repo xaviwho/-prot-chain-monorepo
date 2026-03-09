@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import { getWorkflowPath, getWorkflowFilePath, normalizePath } from '../../../../../utils/pathUtils';
+import { commitStageToBlockchain } from '../../../../../utils/blockchainCommit';
 
 /**
  * POST handler for running structure preparation on a protein
@@ -258,7 +259,12 @@ export async function POST(request, { params }) {
     
     // Write the updated results.json
     fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
-    
+
+    // Automatic blockchain commit (non-fatal)
+    const blockchainResult = await commitStageToBlockchain(
+      id, 'structure_preparation', structureData, request
+    );
+
     // Return success response
     return NextResponse.json({
       success: true,
@@ -268,7 +274,8 @@ export async function POST(request, { params }) {
         input: normalizePath(inputPath),
         processed: normalizePath(processedPath),
         results: normalizePath(resultsPath)
-      }
+      },
+      blockchain: blockchainResult,
     });
   } catch (err) {
     return NextResponse.json(

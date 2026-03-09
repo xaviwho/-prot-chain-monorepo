@@ -15,6 +15,7 @@ from virtual_screening import get_screener
 from compound_parser import parse_csv, parse_sdf
 from molecular_docking import get_docking_engine
 from molecular_dynamics import get_md_engine
+from lead_optimization import get_lead_optimizer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -454,6 +455,51 @@ async def molecular_dynamics(request: MDSimulationRequest):
     except Exception as e:
         logger.error(f"MD simulation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"MD simulation failed: {str(e)}")
+
+
+# --- Lead Optimization ---
+
+class LeadOptimizationRequest(BaseModel):
+    workflow_id: Optional[str] = None
+    compounds: List[Dict[str, Any]]
+    max_compounds: Optional[int] = 20
+    enable_mmp: Optional[bool] = True
+    enable_rgroup: Optional[bool] = True
+    enable_bioisosteres: Optional[bool] = True
+    enable_pareto: Optional[bool] = True
+    enable_analogs: Optional[bool] = True
+    enable_pharmacophore: Optional[bool] = True
+
+@app.post("/api/v1/optimization/lead-optimization")
+async def lead_optimization(request: LeadOptimizationRequest):
+    """Run lead optimization analysis on compounds from MD/screening stages."""
+    try:
+        if not request.compounds:
+            raise HTTPException(status_code=400, detail="compounds list is required")
+
+        optimizer = get_lead_optimizer()
+        results = optimizer.optimize(
+            compounds=request.compounds,
+            max_compounds=request.max_compounds or 20,
+            enable_mmp=request.enable_mmp,
+            enable_rgroup=request.enable_rgroup,
+            enable_bioisosteres=request.enable_bioisosteres,
+            enable_pareto=request.enable_pareto,
+            enable_analogs=request.enable_analogs,
+            enable_pharmacophore=request.enable_pharmacophore,
+        )
+
+        logger.info(
+            f"Lead optimization completed: {results['compounds_analyzed']} analyzed, "
+            f"{results['advance_count']} ready to advance in {results['total_computation_time_seconds']}s"
+        )
+        return AnalysisResponse(success=True, data=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Lead optimization error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Lead optimization failed: {str(e)}")
 
 
 if __name__ == "__main__":

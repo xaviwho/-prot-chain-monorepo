@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { commitStageToBlockchain } from '../../../../../utils/blockchainCommit';
 
 // The bioapi service URL, should be in an env var but hardcoded for now
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
@@ -107,6 +108,17 @@ export async function POST(request, { params }) {
         }
       } catch (saveError) {
         // Non-critical — don't fail the request
+      }
+    }
+
+    // Automatic blockchain commit for structure preparation (non-fatal)
+    if (isJson) {
+      const stageResults = typeof data === 'object' ? data : {};
+      const blockchainResult = await commitStageToBlockchain(
+        workflowId, 'structure_preparation', stageResults, request
+      );
+      if (typeof data === 'object') {
+        data.blockchain = blockchainResult;
       }
     }
 

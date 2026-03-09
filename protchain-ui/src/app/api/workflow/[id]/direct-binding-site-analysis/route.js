@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { commitStageToBlockchain } from '../../../../../utils/blockchainCommit';
 
 export async function POST(request, { params }) {
   try {
@@ -160,6 +161,11 @@ export async function POST(request, { params }) {
 
       fs.writeFileSync(resultsPath, JSON.stringify(existingResults, null, 2));
 
+      // Automatic blockchain commit (non-fatal)
+      const blockchainResult = await commitStageToBlockchain(
+        id, 'binding_site_analysis', existingResults.binding_site_analysis, request
+      );
+
       return NextResponse.json({
         status: 'success',
         message: 'REAL binding site analysis completed successfully',
@@ -168,7 +174,8 @@ export async function POST(request, { params }) {
         method: method,
         protein_atoms_count: bioApiResult?.data?.protein_atoms_count,
         pdb_id: pdbId,
-        pdbId: pdbId
+        pdbId: pdbId,
+        blockchain: blockchainResult,
       });
     }
 

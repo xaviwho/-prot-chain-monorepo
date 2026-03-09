@@ -12,3 +12,10 @@ vina>=1.2.5
 meeko>=0.5.0
 gemmi
 openbabel-wheel>=3.1.1
+# OpenMM ecosystem — installed via conda-forge in Dockerfile.prod:
+#   openmm>=8.1
+#   openmmforcefields>=0.13.0
+#   openff-toolkit>=0.16.0
+#   ambertools>=23.0
+#   parmed>=4.2.0
+#   pdbfixer

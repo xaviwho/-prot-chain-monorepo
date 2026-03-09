@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs/promises';
+import { readBlockchainJson } from '../../../../../utils/blockchainCommit';
 
 export async function GET(request, { params }) {
   const { id } = await Promise.resolve(params);
@@ -21,6 +22,9 @@ export async function GET(request, { params }) {
 
       if (response.ok) {
         const data = await response.json();
+        // Attach per-stage blockchain status
+        const blockchainData = readBlockchainJson(id);
+        data.blockchain_stages = blockchainData.stages || {};
         return NextResponse.json(data);
       }
       
@@ -32,7 +36,9 @@ export async function GET(request, { params }) {
     try {
       const resultsContent = await fs.readFile(resultsFilePath, 'utf-8');
       const resultsData = JSON.parse(resultsContent);
-      
+      // Attach per-stage blockchain status
+      const blockchainData = readBlockchainJson(id);
+      resultsData.blockchain_stages = blockchainData.stages || {};
       return NextResponse.json(resultsData);
     } catch (fsError) {
       return NextResponse.json(

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -28,21 +28,10 @@ import {
   ListItemSecondaryAction,
   Divider,
   Select,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Switch,
-  FormControlLabel,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   MenuItem,
   FormControl,
-  InputLabel
+  InputLabel,
+  Snackbar
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -50,45 +39,19 @@ import {
   People as PeopleIcon,
   Group as GroupIcon,
   PersonAdd as PersonAddIcon,
-  Email as EmailIcon,
   Settings as SettingsIcon,
   Delete as DeleteIcon,
-  Edit as EditIcon,
-  Share as ShareIcon,
   AdminPanelSettings as AdminIcon,
   Person as PersonIcon,
-  Science as ScienceIcon,
-  Assignment as ProjectIcon,
   Analytics as AnalyticsIcon,
-  Security as SecurityIcon,
-  Storage as StorageIcon,
-  Timeline as TimelineIcon,
-  TrendingUp as TrendingUpIcon,
-  Verified as VerifiedIcon,
-  School as SchoolIcon,
-  Work as WorkIcon,
-  ExpandMore as ExpandMoreIcon,
-  Folder as FolderIcon,
-  Description as DescriptionIcon,
-  CloudUpload as CloudUploadIcon,
-  Download as DownloadIcon,
-  Visibility as VisibilityIcon,
-  Assignment as AssignmentIcon,
-  Biotech as BiotechIcon,
-  DataUsage as DataUsageIcon
+  ArrowBack as ArrowBackIcon
 } from '@mui/icons-material';
 import { useRouter, useParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 function TabPanel({ children, value, index, ...other }) {
   return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`org-tabpanel-${index}`}
-      aria-labelledby={`org-tab-${index}`}
-      {...other}
-    >
+    <div role="tabpanel" hidden={value !== index} id={`org-tabpanel-${index}`} {...other}>
       {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
     </div>
   );
@@ -96,58 +59,95 @@ function TabPanel({ children, value, index, ...other }) {
 
 function OrganizationDetailPageContent() {
   const [organization, setOrganization] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [tabValue, setTabValue] = useState(0);
+  const [userRole, setUserRole] = useState('member');
+
+  // Dialog states
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [createTeamDialogOpen, setCreateTeamDialogOpen] = useState(false);
-  const [inviteData, setInviteData] = useState({
-    email: '',
-    role: 'member',
-    teamId: ''
-  });
-  const [newTeam, setNewTeam] = useState({
-    name: '',
-    description: ''
-  });
+  const [inviteData, setInviteData] = useState({ email: '', role: 'member' });
+  const [newTeam, setNewTeam] = useState({ name: '', description: '' });
   const [inviting, setInviting] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
+
+  // Settings states
+  const [settingsForm, setSettingsForm] = useState({ name: '', description: '', domain: '' });
+  const [saving, setSaving] = useState(false);
+  const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false);
+  const [deletingOrg, setDeletingOrg] = useState(false);
+  const [removingMember, setRemovingMember] = useState(null);
+
   const router = useRouter();
   const params = useParams();
   const orgId = params.id;
 
-  useEffect(() => {
-    if (orgId) {
-      fetchOrganization();
-    }
-  }, [orgId]);
+  const getToken = () =>
+    localStorage.getItem('token') ||
+    document.cookie.split('; ').find(r => r.startsWith('token='))?.split('=')[1];
 
-  const fetchOrganization = async () => {
+  // Get current user ID from JWT
+  const getCurrentUserId = () => {
+    try {
+      const token = getToken();
+      if (!token) return null;
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.user_id || payload.sub || payload.id;
+    } catch {
+      return null;
+    }
+  };
+
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token') || document.cookie.split('token=')[1]?.split(';')[0];
-      
-      const response = await fetch(`/api/v1/teams/organizations?id=${orgId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      setError('');
+      const headers = {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      };
 
+      const [orgRes, membersRes, teamsRes] = await Promise.all([
+        fetch(`/api/v1/teams/organizations/${orgId}`, { headers }),
+        fetch(`/api/v1/teams/organizations/${orgId}/members`, { headers }),
+        fetch(`/api/v1/teams/organizations/${orgId}/teams`, { headers }),
+      ]);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error('Failed to fetch organization');
+      if (!orgRes.ok) throw new Error('Failed to fetch organization');
+
+      const orgData = await orgRes.json();
+      const membersData = membersRes.ok ? await membersRes.json() : { data: [] };
+      const teamsData = teamsRes.ok ? await teamsRes.json() : { data: [] };
+
+      const org = orgData.data;
+      const membersList = Array.isArray(membersData.data) ? membersData.data : [];
+      const teamsList = Array.isArray(teamsData.data) ? teamsData.data : [];
+
+      setOrganization(org);
+      setMembers(membersList);
+      setTeams(teamsList);
+      setSettingsForm({ name: org.name || '', description: org.description || '', domain: org.domain || '' });
+
+      // Detect user role from members list
+      const currentUserId = getCurrentUserId();
+      if (currentUserId) {
+        const me = membersList.find(m => m.user_id == currentUserId);
+        setUserRole(me?.role || 'member');
       }
-
-      const data = await response.json();
-      setOrganization(data.data);
     } catch (err) {
       setError('Failed to load organization: ' + err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [orgId]);
+
+  useEffect(() => {
+    if (orgId) fetchData();
+  }, [orgId, fetchData]);
 
   const handleInviteUser = async () => {
     if (!inviteData.email.trim()) {
@@ -157,27 +157,24 @@ function OrganizationDetailPageContent() {
 
     try {
       setInviting(true);
-      const token = localStorage.getItem('token') || document.cookie.split('token=')[1]?.split(';')[0];
-      
+      setError('');
       const response = await fetch(`/api/v1/teams/organizations/${orgId}/invite`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${getToken()}`,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(inviteData)
+        body: JSON.stringify(inviteData),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to send invitation');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to send invitation');
       }
 
       setInviteDialogOpen(false);
-      setInviteData({ email: '', role: 'member', teamId: '' });
-      setError('');
-      // Show success message
-      alert('Invitation sent successfully!');
+      setInviteData({ email: '', role: 'member' });
+      setSuccess('Invitation sent successfully');
     } catch (err) {
       setError('Failed to send invitation: ' + err.message);
     } finally {
@@ -193,30 +190,25 @@ function OrganizationDetailPageContent() {
 
     try {
       setCreatingTeam(true);
-      const token = localStorage.getItem('token') || document.cookie.split('token=')[1]?.split(';')[0];
-      
+      setError('');
       const response = await fetch(`/api/v1/teams/organizations/${orgId}/teams`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${getToken()}`,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newTeam)
+        body: JSON.stringify(newTeam),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create team');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to create team');
       }
 
-      const data = await response.json();
-      setOrganization(prev => ({
-        ...prev,
-        teams: [...(prev.teams || []), data.data]
-      }));
       setCreateTeamDialogOpen(false);
       setNewTeam({ name: '', description: '' });
-      setError('');
+      setSuccess('Team created successfully');
+      fetchData();
     } catch (err) {
       setError('Failed to create team: ' + err.message);
     } finally {
@@ -224,10 +216,64 @@ function OrganizationDetailPageContent() {
     }
   };
 
+  const handleSaveSettings = async () => {
+    try {
+      setSaving(true);
+      setError('');
+      const response = await fetch(`/api/v1/teams/organizations/${orgId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settingsForm),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to update organization');
+      }
+
+      setSuccess('Organization updated successfully');
+      fetchData();
+    } catch (err) {
+      setError('Failed to save settings: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteOrganization = async () => {
+    try {
+      setDeletingOrg(true);
+      setError('');
+      const response = await fetch(`/api/v1/teams/organizations/${orgId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to delete organization');
+      }
+
+      router.push('/organizations');
+    } catch (err) {
+      setError('Failed to delete organization: ' + err.message);
+    } finally {
+      setDeletingOrg(false);
+      setDeleteOrgDialogOpen(false);
+    }
+  };
+
+  const isAdmin = userRole === 'admin';
+
   const getRoleIcon = (role) => {
     switch (role) {
       case 'admin': return <AdminIcon color="primary" />;
-      case 'lead': return <AdminIcon color="secondary" />;
       default: return <PersonIcon />;
     }
   };
@@ -235,7 +281,7 @@ function OrganizationDetailPageContent() {
   const getRoleColor = (role) => {
     switch (role) {
       case 'admin': return 'primary';
-      case 'lead': return 'secondary';
+      case 'owner': return 'secondary';
       default: return 'default';
     }
   };
@@ -264,7 +310,12 @@ function OrganizationDetailPageContent() {
       {/* Header */}
       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={4}>
         <Box display="flex" alignItems="center" gap={2}>
-          <Avatar sx={{ bgcolor: '#2e7d32', width: 64, height: 64 }}>
+          <Tooltip title="Back to Organizations">
+            <IconButton onClick={() => router.push('/organizations')}>
+              <ArrowBackIcon />
+            </IconButton>
+          </Tooltip>
+          <Avatar sx={{ bgcolor: '#16a34a', width: 64, height: 64 }}>
             <BusinessIcon fontSize="large" />
           </Avatar>
           <Box>
@@ -272,18 +323,21 @@ function OrganizationDetailPageContent() {
               {organization.name}
             </Typography>
             {organization.description && (
-              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
                 {organization.description}
               </Typography>
             )}
             <Box display="flex" gap={1} mt={1}>
-              <Chip label={organization.plan} color="primary" size="small" />
-              <Chip label={`Your role: ${organization.user_role}`} color="secondary" size="small" />
+              <Chip label={organization.plan || 'free'} color="primary" size="small" />
+              <Chip label={`Your role: ${userRole}`} color="secondary" size="small" />
+              {organization.domain && (
+                <Chip label={organization.domain} variant="outlined" size="small" />
+              )}
             </Box>
           </Box>
         </Box>
         <Box display="flex" gap={1}>
-          {organization.user_role === 'admin' && (
+          {isAdmin && (
             <>
               <Button
                 variant="outlined"
@@ -296,7 +350,7 @@ function OrganizationDetailPageContent() {
                 variant="contained"
                 startIcon={<AddIcon />}
                 onClick={() => setCreateTeamDialogOpen(true)}
-                sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+                sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
               >
                 Create Team
               </Button>
@@ -313,150 +367,118 @@ function OrganizationDetailPageContent() {
 
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs 
-          value={tabValue} 
-          onChange={(e, newValue) => setTabValue(newValue)} 
-          variant="scrollable" 
-          scrollButtons="auto"
+        <Tabs
+          value={tabValue}
+          onChange={(e, v) => setTabValue(v)}
           sx={{
-            '& .MuiTab-root': {
-              color: '#333333',
-              fontWeight: 500,
-              fontSize: '0.875rem',
-              minHeight: 48,
-              '&.Mui-selected': {
-                color: '#1976d2',
-                fontWeight: 600
-              }
-            },
-            '& .MuiTabs-indicator': {
-              backgroundColor: '#1976d2'
-            }
+            '& .MuiTab-root': { color: '#333', fontWeight: 500, fontSize: '0.875rem', minHeight: 48 },
+            '& .Mui-selected': { color: '#16a34a', fontWeight: 600 },
+            '& .MuiTabs-indicator': { backgroundColor: '#16a34a' },
           }}
         >
           <Tab icon={<AnalyticsIcon />} label="Overview" />
-          <Tab icon={<PeopleIcon />} label="Members" />
-          <Tab icon={<GroupIcon />} label="Teams" />
-          <Tab icon={<ProjectIcon />} label="Projects" />
-          <Tab icon={<ScienceIcon />} label="Research" />
-          <Tab icon={<StorageIcon />} label="Resources" />
-          <Tab icon={<SecurityIcon />} label="Compliance" />
+          <Tab icon={<PeopleIcon />} label={`Members (${members.length})`} />
+          <Tab icon={<GroupIcon />} label={`Teams (${teams.length})`} />
           <Tab icon={<SettingsIcon />} label="Settings" />
         </Tabs>
       </Box>
 
-      {/* Tab Panels */}
+      {/* Overview Tab */}
       <TabPanel value={tabValue} index={0}>
-        {/* Overview Tab */}
         <Grid container spacing={3}>
-          {/* Statistics Cards */}
-          <Grid item xs={12} md={3}>
-            <Card sx={{ background: 'linear-gradient(135deg, #2e7d32 0%, #4caf50 100%)', color: 'white' }}>
+          <Grid item xs={12} md={4}>
+            <Card sx={{ background: 'linear-gradient(135deg, #16a34a 0%, #4ade80 100%)', color: 'white' }}>
               <CardContent>
                 <Box display="flex" alignItems="center" gap={2} mb={2}>
                   <PeopleIcon fontSize="large" />
                   <Typography variant="h6">Members</Typography>
                 </Box>
-                <Typography variant="h3">{organization.member_count}</Typography>
+                <Typography variant="h3">{organization.member_count || members.length}</Typography>
                 <Typography variant="body2" sx={{ opacity: 0.9 }}>Active researchers</Typography>
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={4}>
             <Card sx={{ background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)', color: 'white' }}>
               <CardContent>
                 <Box display="flex" alignItems="center" gap={2} mb={2}>
-                  <ProjectIcon fontSize="large" />
-                  <Typography variant="h6">Projects</Typography>
+                  <GroupIcon fontSize="large" />
+                  <Typography variant="h6">Teams</Typography>
                 </Box>
-                <Typography variant="h3">{organization.project_count}</Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Active projects</Typography>
+                <Typography variant="h3">{organization.team_count || teams.length}</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.9 }}>Research teams</Typography>
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={4}>
             <Card sx={{ background: 'linear-gradient(135deg, #7b1fa2 0%, #ab47bc 100%)', color: 'white' }}>
               <CardContent>
                 <Box display="flex" alignItems="center" gap={2} mb={2}>
-                  <ScienceIcon fontSize="large" />
-                  <Typography variant="h6">Workflows</Typography>
+                  <BusinessIcon fontSize="large" />
+                  <Typography variant="h6">Plan</Typography>
                 </Box>
-                <Typography variant="h3">{organization.workflow_count}</Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Total workflows</Typography>
+                <Typography variant="h3" sx={{ textTransform: 'capitalize' }}>
+                  {organization.plan || 'Free'}
+                </Typography>
+                <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                  Created {new Date(organization.created_at).toLocaleDateString()}
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={3}>
-            <Card sx={{ background: 'linear-gradient(135deg, #f57c00 0%, #ffb74d 100%)', color: 'white' }}>
-              <CardContent>
-                <Box display="flex" alignItems="center" gap={2} mb={2}>
-                  <SchoolIcon fontSize="large" />
-                  <Typography variant="h6">Publications</Typography>
-                </Box>
-                <Typography variant="h3">{organization.publication_count}</Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Research papers</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          
-          {/* Research Areas */}
+
+          {/* Recent Members */}
           <Grid item xs={12} md={6}>
             <Card>
               <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  <ScienceIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                  Research Areas
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                  Recent Members
                 </Typography>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" color="primary" gutterBottom>
-                    Primary Focus: {organization.primary_focus}
-                  </Typography>
-                </Box>
-                <Box display="flex" flexWrap="wrap" gap={1}>
-                  {organization.research_areas?.map((area, index) => (
-                    <Chip 
-                      key={index} 
-                      label={area} 
-                      variant="outlined" 
-                      color="primary"
-                      size="small"
-                    />
-                  ))}
-                </Box>
+                {members.length > 0 ? (
+                  <List dense>
+                    {members.slice(0, 5).map((member) => (
+                      <ListItem key={member.user_id || member.id}>
+                        <ListItemAvatar>
+                          <Avatar>{getRoleIcon(member.role)}</Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={member.email || `User #${member.user_id}`}
+                          secondary={member.role}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">No members yet</Typography>
+                )}
               </CardContent>
             </Card>
           </Grid>
-          
-          {/* Organization Settings Overview */}
+
+          {/* Recent Teams */}
           <Grid item xs={12} md={6}>
             <Card>
               <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  <SettingsIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                  Configuration
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                  Teams
                 </Typography>
-                <List dense>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Compliance Mode" 
-                      secondary={organization.settings?.compliance_mode || 'Standard'}
-                    />
-                    <VerifiedIcon color="success" />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Blockchain Tracking" 
-                      secondary={organization.settings?.blockchain_tracking ? 'Enabled' : 'Disabled'}
-                    />
-                    {organization.settings?.blockchain_tracking && <VerifiedIcon color="success" />}
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Data Retention" 
-                      secondary={`${organization.settings?.data_retention_days || 365} days`}
-                    />
-                  </ListItem>
-                </List>
+                {teams.length > 0 ? (
+                  <List dense>
+                    {teams.slice(0, 5).map((team) => (
+                      <ListItem key={team.id}>
+                        <ListItemAvatar>
+                          <Avatar sx={{ bgcolor: '#16a34a' }}><GroupIcon /></Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={team.name}
+                          secondary={`${team.member_count || 0} members`}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">No teams yet</Typography>
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -466,459 +488,175 @@ function OrganizationDetailPageContent() {
       {/* Members Tab */}
       <TabPanel value={tabValue} index={1}>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-          <Typography variant="h6" sx={{ color: '#1a1a1a', fontWeight: 600 }}>Organization Members</Typography>
-          {organization.user_role === 'admin' && (
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>Organization Members</Typography>
+          {isAdmin && (
             <Button
               variant="contained"
               startIcon={<PersonAddIcon />}
               onClick={() => setInviteDialogOpen(true)}
-              sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+              sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
             >
               Invite Member
             </Button>
           )}
         </Box>
-        <Card>
-          <List>
-            {organization.members?.map((member, index) => (
-              <React.Fragment key={member.user_id}>
-                <ListItem>
-                  <ListItemAvatar>
-                    <Avatar>
-                      {getRoleIcon(member.role)}
-                    </Avatar>
-                  </ListItemAvatar>
-                  <ListItemText
-                    primary={member.email || member.name || member.user_id}
-                    secondary={`Joined ${new Date(member.joined_at).toLocaleDateString()}`}
-                  />
-                  <ListItemSecondaryAction>
-                    <Chip 
-                      label={member.role} 
-                      color={getRoleColor(member.role)} 
-                      size="small" 
+        {members.length > 0 ? (
+          <Card>
+            <List>
+              {members.map((member, index) => (
+                <React.Fragment key={member.user_id || member.id}>
+                  <ListItem>
+                    <ListItemAvatar>
+                      <Avatar>{getRoleIcon(member.role)}</Avatar>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={
+                        [member.first_name, member.last_name].filter(Boolean).join(' ') ||
+                        member.email ||
+                        `User #${member.user_id}`
+                      }
+                      secondary={
+                        <>
+                          {member.email && <span>{member.email} &bull; </span>}
+                          Joined {new Date(member.joined_at).toLocaleDateString()}
+                        </>
+                      }
                     />
-                  </ListItemSecondaryAction>
-                </ListItem>
-                {index < organization.members.length - 1 && <Divider />}
-              </React.Fragment>
-            ))}
-          </List>
-        </Card>
+                    <ListItemSecondaryAction>
+                      <Chip label={member.role} color={getRoleColor(member.role)} size="small" />
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                  {index < members.length - 1 && <Divider />}
+                </React.Fragment>
+              ))}
+            </List>
+          </Card>
+        ) : (
+          <Card sx={{ textAlign: 'center', py: 4 }}>
+            <CardContent>
+              <PeopleIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+              <Typography variant="body1" color="text.secondary">
+                No members yet. Invite someone to get started.
+              </Typography>
+            </CardContent>
+          </Card>
+        )}
       </TabPanel>
 
       {/* Teams Tab */}
       <TabPanel value={tabValue} index={2}>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-          <Typography variant="h6" sx={{ color: '#1a1a1a', fontWeight: 600 }}>Teams</Typography>
-          {organization.user_role === 'admin' && (
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>Teams</Typography>
+          {isAdmin && (
             <Button
               variant="contained"
               startIcon={<AddIcon />}
               onClick={() => setCreateTeamDialogOpen(true)}
-              sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+              sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
             >
               Create Team
             </Button>
           )}
         </Box>
-        <Grid container spacing={3}>
-          {organization.teams?.map((team) => (
-            <Grid item xs={12} md={6} key={team.id}>
-              <Card>
-                <CardContent>
-                  <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
-                    <Avatar sx={{ bgcolor: '#2e7d32' }}>
-                      <GroupIcon />
-                    </Avatar>
-                    <IconButton size="small">
-                      <SettingsIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                  <Typography variant="h6" gutterBottom>
-                    {team.name}
-                  </Typography>
-                  {team.description && (
-                    <Typography variant="body2" color="text.secondary" mb={2}>
-                      {team.description}
-                    </Typography>
-                  )}
-                  <Box display="flex" justifyContent="space-between" alignItems="center">
-                    <Typography variant="caption">
-                      {team.members?.length || 0} members
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Created {new Date(team.created_at).toLocaleDateString()}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      </TabPanel>
-
-      {/* Projects Tab */}
-      <TabPanel value={tabValue} index={3}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-          <Typography variant="h6" sx={{ color: '#1a1a1a', fontWeight: 600 }}>Research Projects</Typography>
-          {organization.user_role === 'admin' && (
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              sx={{ bgcolor: '#1976d2', '&:hover': { bgcolor: '#1565c0' } }}
-            >
-              New Project
-            </Button>
-          )}
-        </Box>
-        <Grid container spacing={3}>
-          {organization.projects?.map((project) => (
-            <Grid item xs={12} md={6} lg={4} key={project.id}>
-              <Card sx={{ height: '100%' }}>
-                <CardContent>
-                  <Box display="flex" alignItems="center" gap={2} mb={2}>
-                    <Avatar sx={{ bgcolor: '#1976d2' }}>
-                      <ProjectIcon />
-                    </Avatar>
-                    <Box flex={1}>
-                      <Typography variant="h6" noWrap>
-                        {project.name}
+        {teams.length > 0 ? (
+          <Grid container spacing={3}>
+            {teams.map((team) => (
+              <Grid item xs={12} md={6} key={team.id}>
+                <Card>
+                  <CardContent>
+                    <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+                      <Avatar sx={{ bgcolor: '#16a34a' }}>
+                        <GroupIcon />
+                      </Avatar>
+                    </Box>
+                    <Typography variant="h6" gutterBottom>{team.name}</Typography>
+                    {team.description && (
+                      <Typography variant="body2" color="text.secondary" mb={2}>
+                        {team.description}
                       </Typography>
+                    )}
+                    <Box display="flex" justifyContent="space-between" alignItems="center">
+                      <Typography variant="caption">{team.member_count || 0} members</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {project.status}
+                        Created {new Date(team.created_at).toLocaleDateString()}
                       </Typography>
                     </Box>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary" mb={2}>
-                    {project.description}
-                  </Typography>
-                  <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
-                    {project.tags?.slice(0, 3).map((tag, index) => (
-                      <Chip key={index} label={tag} size="small" variant="outlined" />
-                    ))}
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" alignItems="center">
-                    <Typography variant="caption">
-                      {project.workflow_count} workflows
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {new Date(project.updated_at).toLocaleDateString()}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      </TabPanel>
-
-      {/* Research Tab */}
-      <TabPanel value={tabValue} index={4}>
-        <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>
-          <ScienceIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Research Overview
-        </Typography>
-        <Grid container spacing={3}>
-          {/* Research Metrics */}
-          <Grid item xs={12} md={4}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>Research Metrics</Typography>
-                <List dense>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Active Workflows" 
-                      secondary={organization.active_workflows || 0}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Completed Studies" 
-                      secondary={organization.completed_studies || 0}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Publications" 
-                      secondary={organization.publication_count || 0}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Citations" 
-                      secondary={organization.citation_count || 0}
-                    />
-                  </ListItem>
-                </List>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
           </Grid>
-          
-          {/* Recent Publications */}
-          <Grid item xs={12} md={8}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>Recent Publications</Typography>
-                {organization.recent_publications?.length > 0 ? (
-                  <List>
-                    {organization.recent_publications.slice(0, 5).map((pub, index) => (
-                      <ListItem key={index}>
-                        <ListItemAvatar>
-                          <Avatar sx={{ bgcolor: '#7b1fa2' }}>
-                            <SchoolIcon />
-                          </Avatar>
-                        </ListItemAvatar>
-                        <ListItemText
-                          primary={pub.title}
-                          secondary={`${pub.journal} • ${new Date(pub.published_date).getFullYear()}`}
-                        />
-                        <IconButton size="small">
-                          <VisibilityIcon />
-                        </IconButton>
-                      </ListItem>
-                    ))}
-                  </List>
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    No publications yet
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </TabPanel>
-
-      {/* Resources Tab */}
-      <TabPanel value={tabValue} index={5}>
-        <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>
-          <StorageIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Research Resources
-        </Typography>
-        <Grid container spacing={3}>
-          {/* Data Storage */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>
-                  <DataUsageIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                  Data Storage
-                </Typography>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Storage Used: {organization.storage_used || '0 GB'} / {organization.storage_limit || '100 GB'}
-                  </Typography>
-                </Box>
-                <List dense>
-                  <ListItem>
-                    <ListItemText primary="PDB Files" secondary={`${organization.pdb_count || 0} files`} />
-                    <IconButton size="small">
-                      <FolderIcon />
-                    </IconButton>
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText primary="Analysis Results" secondary={`${organization.results_count || 0} files`} />
-                    <IconButton size="small">
-                      <DescriptionIcon />
-                    </IconButton>
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText primary="Blockchain Records" secondary={`${organization.blockchain_records || 0} transactions`} />
-                    <IconButton size="small">
-                      <VerifiedIcon />
-                    </IconButton>
-                  </ListItem>
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
-          
-          {/* Computational Resources */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>
-                  <BiotechIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                  Computational Resources
-                </Typography>
-                <List dense>
-                  <ListItem>
-                    <ListItemText 
-                      primary="CPU Hours Used" 
-                      secondary={`${organization.cpu_hours || 0} hours this month`}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="GPU Hours Used" 
-                      secondary={`${organization.gpu_hours || 0} hours this month`}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="Analysis Queue" 
-                      secondary={`${organization.queue_length || 0} pending jobs`}
-                    />
-                  </ListItem>
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </TabPanel>
-
-      {/* Compliance Tab */}
-      <TabPanel value={tabValue} index={6}>
-        <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>
-          <SecurityIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Compliance & Security
-        </Typography>
-        <Grid container spacing={3}>
-          {/* Compliance Status */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>Compliance Status</Typography>
-                <List>
-                  <ListItem>
-                    <ListItemText 
-                      primary="GDPR Compliance" 
-                      secondary="Data protection and privacy"
-                    />
-                    <VerifiedIcon color="success" />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="HIPAA Compliance" 
-                      secondary="Healthcare data protection"
-                    />
-                    {organization.hipaa_compliant ? <VerifiedIcon color="success" /> : <SecurityIcon color="warning" />}
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText 
-                      primary="FDA 21 CFR Part 11" 
-                      secondary="Electronic records and signatures"
-                    />
-                    {organization.fda_compliant ? <VerifiedIcon color="success" /> : <SecurityIcon color="warning" />}
-                  </ListItem>
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
-          
-          {/* Audit Trail */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>Audit Trail</Typography>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Recent compliance activities
-                </Typography>
-                {organization.audit_logs?.slice(0, 5).map((log, index) => (
-                  <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
-                    <Typography variant="caption" display="block">
-                      {log.action} - {new Date(log.timestamp).toLocaleString()}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {log.user} • {log.details}
-                    </Typography>
-                  </Box>
-                )) || (
-                  <Typography variant="body2" color="text.secondary">
-                    No audit logs available
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+        ) : (
+          <Card sx={{ textAlign: 'center', py: 4 }}>
+            <CardContent>
+              <GroupIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+              <Typography variant="body1" color="text.secondary">
+                No teams yet. Create one to organize your researchers.
+              </Typography>
+            </CardContent>
+          </Card>
+        )}
       </TabPanel>
 
       {/* Settings Tab */}
-      <TabPanel value={tabValue} index={7}>
-        <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>
-          <SettingsIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Organization Settings
-        </Typography>
-        {organization.user_role === 'admin' ? (
+      <TabPanel value={tabValue} index={3}>
+        {isAdmin ? (
           <Grid container spacing={3}>
-            {/* General Settings */}
             <Grid item xs={12} md={6}>
               <Card>
                 <CardContent>
-                  <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>General Settings</Typography>
-                  <Box sx={{ mb: 2 }}>
-                    <TextField
-                      fullWidth
-                      label="Organization Name"
-                      value={organization.name}
-                      margin="normal"
-                    />
-                    <TextField
-                      fullWidth
-                      label="Description"
-                      value={organization.description}
-                      multiline
-                      rows={3}
-                      margin="normal"
-                    />
-                    <TextField
-                      fullWidth
-                      label="Primary Research Focus"
-                      value={organization.primary_focus}
-                      margin="normal"
-                    />
+                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>General Settings</Typography>
+                  <TextField
+                    fullWidth
+                    label="Organization Name"
+                    value={settingsForm.name}
+                    onChange={(e) => setSettingsForm(prev => ({ ...prev, name: e.target.value }))}
+                    margin="normal"
+                  />
+                  <TextField
+                    fullWidth
+                    label="Description"
+                    value={settingsForm.description}
+                    onChange={(e) => setSettingsForm(prev => ({ ...prev, description: e.target.value }))}
+                    multiline
+                    rows={3}
+                    margin="normal"
+                  />
+                  <TextField
+                    fullWidth
+                    label="Email Domain"
+                    value={settingsForm.domain}
+                    onChange={(e) => setSettingsForm(prev => ({ ...prev, domain: e.target.value }))}
+                    margin="normal"
+                    placeholder="e.g., company.com"
+                  />
+                  <Box mt={2}>
+                    <Button
+                      variant="contained"
+                      onClick={handleSaveSettings}
+                      disabled={saving}
+                      sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
+                    >
+                      {saving ? <CircularProgress size={20} /> : 'Save Changes'}
+                    </Button>
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
-            
-            {/* Security & Compliance */}
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom sx={{ color: '#1a1a1a', fontWeight: 600 }}>Security & Compliance</Typography>
-                  <FormControlLabel
-                    control={<Switch checked={organization.settings?.blockchain_tracking || false} />}
-                    label="Blockchain Tracking"
-                  />
-                  <FormControlLabel
-                    control={<Switch checked={organization.settings?.audit_logging || false} />}
-                    label="Audit Logging"
-                  />
-                  <FormControlLabel
-                    control={<Switch checked={organization.settings?.data_encryption || false} />}
-                    label="Data Encryption"
-                  />
-                  <Box sx={{ mt: 2 }}>
-                    <TextField
-                      fullWidth
-                      label="Data Retention (days)"
-                      type="number"
-                      value={organization.settings?.data_retention_days || 365}
-                      margin="normal"
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-            
-            {/* Danger Zone */}
+
             <Grid item xs={12}>
               <Card sx={{ border: '1px solid', borderColor: 'error.main' }}>
                 <CardContent>
-                  <Typography variant="h6" color="error" gutterBottom>
-                    Danger Zone
-                  </Typography>
+                  <Typography variant="h6" color="error" gutterBottom>Danger Zone</Typography>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
-                    These actions cannot be undone. Please proceed with caution.
+                    Deleting an organization removes all teams, members, and invitations permanently.
                   </Typography>
-                  <Box display="flex" gap={2} mt={2}>
+                  <Box mt={2}>
                     <Button
                       variant="outlined"
                       color="error"
                       startIcon={<DeleteIcon />}
+                      onClick={() => setDeleteOrgDialogOpen(true)}
                     >
                       Delete Organization
                     </Button>
@@ -935,12 +673,7 @@ function OrganizationDetailPageContent() {
       </TabPanel>
 
       {/* Invite User Dialog */}
-      <Dialog 
-        open={inviteDialogOpen} 
-        onClose={() => setInviteDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={inviteDialogOpen} onClose={() => setInviteDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Invite User to Organization</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1 }}>
@@ -965,34 +698,15 @@ function OrganizationDetailPageContent() {
                 <MenuItem value="admin">Admin</MenuItem>
               </Select>
             </FormControl>
-            {organization.teams?.length > 0 && (
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Team (Optional)</InputLabel>
-                <Select
-                  value={inviteData.teamId}
-                  label="Team (Optional)"
-                  onChange={(e) => setInviteData(prev => ({ ...prev, teamId: e.target.value }))}
-                >
-                  <MenuItem value="">No specific team</MenuItem>
-                  {organization.teams.map((team) => (
-                    <MenuItem key={team.id} value={team.id}>
-                      {team.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setInviteDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button 
+          <Button onClick={() => setInviteDialogOpen(false)}>Cancel</Button>
+          <Button
             onClick={handleInviteUser}
             variant="contained"
             disabled={inviting || !inviteData.email.trim()}
-            sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+            sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
           >
             {inviting ? <CircularProgress size={20} /> : 'Send Invitation'}
           </Button>
@@ -1000,12 +714,7 @@ function OrganizationDetailPageContent() {
       </Dialog>
 
       {/* Create Team Dialog */}
-      <Dialog 
-        open={createTeamDialogOpen} 
-        onClose={() => setCreateTeamDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={createTeamDialogOpen} onClose={() => setCreateTeamDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Create New Team</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1 }}>
@@ -1031,19 +740,47 @@ function OrganizationDetailPageContent() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateTeamDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button 
+          <Button onClick={() => setCreateTeamDialogOpen(false)}>Cancel</Button>
+          <Button
             onClick={handleCreateTeam}
             variant="contained"
             disabled={creatingTeam || !newTeam.name.trim()}
-            sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+            sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
           >
             {creatingTeam ? <CircularProgress size={20} /> : 'Create Team'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Delete Organization Dialog */}
+      <Dialog open={deleteOrgDialogOpen} onClose={() => setDeleteOrgDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete Organization</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1">
+            Are you sure you want to permanently delete &quot;{organization.name}&quot;? This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteOrgDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleDeleteOrganization}
+            variant="contained"
+            disabled={deletingOrg}
+            sx={{ bgcolor: '#e53935', '&:hover': { bgcolor: '#c62828' } }}
+          >
+            {deletingOrg ? <CircularProgress size={20} /> : 'Delete Organization'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Success Snackbar */}
+      <Snackbar
+        open={!!success}
+        autoHideDuration={4000}
+        onClose={() => setSuccess('')}
+        message={success}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 }

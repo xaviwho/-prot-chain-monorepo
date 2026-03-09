@@ -56,6 +56,14 @@ DEFAULT_ENERGY_RANGE = 3.0
 MAX_WORKERS = 4
 DOCKING_TIMEOUT = 120  # seconds per compound
 
+# Ligand preparation settings
+MAX_MW_FOR_DOCKING = 900.0      # Da — reject ligands above this
+MAX_HEAVY_ATOMS = 100           # reject if too many heavy atoms
+MAX_ROTATABLE_BONDS = 20        # reject if too flexible for Vina
+WARN_ROTATABLE_BONDS = 12       # log warning if high
+NUM_CONFORMERS = 5              # generate N conformers, keep best
+MMFF_MAX_ITERS = 500            # increased from 200 for better convergence
+
 
 @dataclass
 class DockingConfig:
@@ -122,37 +130,195 @@ def prepare_receptor_pdbqt(pdb_content: str, work_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Ligand preparation (SMILES -> 3D conformer -> PDBQT via RDKit + Meeko)
+# Ligand preparation helpers
+# ---------------------------------------------------------------------------
+
+def _standardize_mol(mol):
+    """Standardize molecule: remove salts, normalize functional groups."""
+    from rdkit import Chem
+    from rdkit.Chem.MolStandardize import rdMolStandardize
+
+    try:
+        # Remove salts/counterions — keep largest fragment
+        mol = rdMolStandardize.FragmentParent(mol)
+
+        # Normalize functional groups (nitro, charge separation, etc.)
+        normalizer = rdMolStandardize.Normalizer()
+        mol = normalizer.normalize(mol)
+
+        # Remove unnecessary formal charges
+        uncharger = rdMolStandardize.Uncharger()
+        mol = uncharger.uncharge(mol)
+    except Exception as e:
+        logger.warning(f"Molecule standardization failed, using original: {e}")
+
+    return mol
+
+
+def _canonical_tautomer(mol):
+    """Pick the canonical tautomer (e.g., keto vs enol form)."""
+    from rdkit.Chem.MolStandardize import rdMolStandardize
+
+    try:
+        enumerator = rdMolStandardize.TautomerEnumerator()
+        mol = enumerator.Canonicalize(mol)
+    except Exception as e:
+        logger.warning(f"Tautomer canonicalization failed, using original: {e}")
+
+    return mol
+
+
+def _protonate_at_physiological_pH(mol, pH=7.4):
+    """Adjust protonation state for physiological pH using OpenBabel.
+
+    At pH 7.4: carboxylic acids deprotonated (COO-), amines protonated (NH3+).
+    Uses the same approach as receptor preparation for consistency.
+    """
+    from rdkit import Chem
+
+    if not OPENBABEL_AVAILABLE:
+        logger.warning("OpenBabel not available — skipping pH-aware protonation")
+        return mol
+
+    try:
+        from openbabel import openbabel as ob
+
+        # RDKit mol → SMILES → OpenBabel
+        smiles = Chem.MolToSmiles(mol)
+
+        ob_conv = ob.OBConversion()
+        ob_conv.SetInAndOutFormats("smi", "smi")
+
+        ob_mol = ob.OBMol()
+        ob_conv.ReadString(ob_mol, smiles)
+
+        # Add hydrogens at physiological pH (same as receptor prep)
+        ob_mol.AddHydrogens(False, True, pH)
+
+        # Convert back to SMILES (without explicit H for RDKit parsing)
+        ob_conv.AddOption("h", ob.OBConversion.OUTOPTIONS)  # output without explicit H
+        protonated_smi = ob_conv.WriteString(ob_mol).strip()
+
+        # Parse back into RDKit
+        new_mol = Chem.MolFromSmiles(protonated_smi)
+        if new_mol is None:
+            logger.warning("OpenBabel protonation produced invalid SMILES, using original")
+            return mol
+
+        logger.debug(f"Protonated at pH {pH}: {smiles} -> {protonated_smi}")
+        return new_mol
+
+    except Exception as e:
+        logger.warning(f"pH protonation failed, using original: {e}")
+        return mol
+
+
+def _generate_best_conformer(mol, num_confs=NUM_CONFORMERS, name="ligand"):
+    """Generate multiple 3D conformers, minimize each, keep lowest energy."""
+    from rdkit.Chem import AllChem
+
+    params = AllChem.ETKDGv3()
+    params.randomSeed = 42
+    params.numThreads = 0  # use all cores
+
+    # Generate multiple conformers
+    conf_ids = list(AllChem.EmbedMultipleConfs(mol, numConfs=num_confs, params=params))
+
+    if len(conf_ids) == 0:
+        # Fallback: try with random coordinates
+        params.useRandomCoords = True
+        conf_ids = list(AllChem.EmbedMultipleConfs(mol, numConfs=num_confs, params=params))
+        if len(conf_ids) == 0:
+            raise ValueError(f"3D conformer generation failed for {name}")
+
+    # Minimize each conformer with MMFF94 and track energies
+    results = AllChem.MMFFOptimizeMoleculeConfs(mol, maxIters=MMFF_MAX_ITERS)
+
+    # Pick conformer with lowest energy
+    # results[i] = (not_converged, energy) — not_converged=0 means converged
+    best_conf_id = conf_ids[0]
+    best_energy = float('inf')
+    for conf_id, (not_converged, energy) in zip(conf_ids, results):
+        if energy < best_energy:
+            best_energy = energy
+            best_conf_id = conf_id
+
+    # Remove all conformers except the best one
+    for cid in sorted(conf_ids, reverse=True):
+        if cid != best_conf_id:
+            mol.RemoveConformer(cid)
+
+    logger.debug(
+        f"Conformer selection for {name}: {len(conf_ids)} generated, "
+        f"best energy = {best_energy:.1f} kcal/mol (conf {best_conf_id})"
+    )
+
+    return mol
+
+
+# ---------------------------------------------------------------------------
+# Ligand preparation (SMILES -> prepared 3D conformer -> PDBQT)
 # ---------------------------------------------------------------------------
 
 def prepare_ligand_pdbqt(smiles: str, name: str = "ligand") -> str:
-    """Convert SMILES to PDBQT string via RDKit 3D conformer + Meeko."""
+    """Convert SMILES to PDBQT string with full ligand preparation.
+
+    Pipeline:
+    1. Parse and validate SMILES
+    2. Pre-docking validation (MW, heavy atoms, rotatable bonds)
+    3. Standardize (remove salts, normalize functional groups)
+    4. Canonicalize tautomer
+    5. Protonate at physiological pH (7.4) via OpenBabel
+    6. Add explicit hydrogens
+    7. Generate multiple 3D conformers, minimize, keep best
+    8. Convert to PDBQT via Meeko
+    """
     from rdkit import Chem
-    from rdkit.Chem import AllChem
+    from rdkit.Chem import AllChem, Descriptors
     from meeko import MoleculePreparation, PDBQTWriterLegacy
 
+    # Step 1: Parse SMILES
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles}")
 
+    # Step 2: Pre-docking validation
+    mw = Descriptors.ExactMolWt(mol)
+    if mw > MAX_MW_FOR_DOCKING:
+        raise ValueError(
+            f"MW too high for docking ({mw:.0f} Da > {MAX_MW_FOR_DOCKING:.0f}): {name}"
+        )
+
+    heavy_atoms = mol.GetNumHeavyAtoms()
+    if heavy_atoms > MAX_HEAVY_ATOMS:
+        raise ValueError(
+            f"Too many heavy atoms ({heavy_atoms} > {MAX_HEAVY_ATOMS}): {name}"
+        )
+
+    rot_bonds = Descriptors.NumRotatableBonds(mol)
+    if rot_bonds > MAX_ROTATABLE_BONDS:
+        raise ValueError(
+            f"Too many rotatable bonds ({rot_bonds} > {MAX_ROTATABLE_BONDS}): {name}"
+        )
+    if rot_bonds > WARN_ROTATABLE_BONDS:
+        logger.warning(f"High rotatable bonds ({rot_bonds}) for {name} — docking accuracy may be reduced")
+
+    # Step 3: Standardize molecule
+    mol = _standardize_mol(mol)
+
+    # Step 4: Canonical tautomer
+    mol = _canonical_tautomer(mol)
+
+    # Step 5: Protonate at physiological pH
+    mol = _protonate_at_physiological_pH(mol, pH=7.4)
+
+    # Step 6: Add explicit hydrogens
     mol = Chem.AddHs(mol)
 
-    # Generate 3D conformer using ETKDGv3
-    params = AllChem.ETKDGv3()
-    params.randomSeed = 42
-    status = AllChem.EmbedMolecule(mol, params)
+    # Step 7: Generate multiple 3D conformers, keep best
+    mol = _generate_best_conformer(mol, num_confs=NUM_CONFORMERS, name=name)
 
-    if status != 0:
-        # Fallback: use random coordinates
-        params.useRandomCoords = True
-        status = AllChem.EmbedMolecule(mol, params)
-        if status != 0:
-            raise ValueError(f"3D conformer generation failed for {name}")
-
-    # Optimize geometry with MMFF force field
-    AllChem.MMFFOptimizeMolecule(mol, maxIters=200)
-
-    # Convert to PDBQT via Meeko
+    # Step 8: Convert to PDBQT via Meeko
     preparator = MoleculePreparation()
     mol_setups = preparator.prepare(mol)
 
@@ -399,7 +565,11 @@ class VinaDockingEngine:
                     prep_failures.append({"name": name, "error": str(e)})
                     logger.warning(f"Ligand prep failed for {name}: {e}")
 
-            logger.info(f"Ligand prep: {len(prepared_ligands)} ready, {len(prep_failures)} failed")
+            validation_failures = [f for f in prep_failures if "too high" in f.get("error", "") or "Too many" in f.get("error", "")]
+            logger.info(
+                f"Ligand prep: {len(prepared_ligands)} ready, {len(prep_failures)} failed "
+                f"({len(validation_failures)} filtered by validation)"
+            )
 
             # Step 4: Parallel docking
             results = []
@@ -539,6 +709,27 @@ class VinaDockingEngine:
                 "total_docking_time_seconds": total_time,
                 "exhaustiveness": docking_config.exhaustiveness,
                 "scoring_components": ["vina_score"],
+                "ligand_preparation": {
+                    "steps": [
+                        "Molecule standardization (salt removal, charge normalization)",
+                        "Tautomer canonicalization",
+                        "Protonation at physiological pH (7.4)",
+                        "Multi-conformer generation (5 conformers, MMFF94 minimization)",
+                        "Best conformer selection by lowest energy",
+                    ],
+                    "protonation_pH": 7.4,
+                    "conformers_generated": NUM_CONFORMERS,
+                    "force_field": "MMFF94",
+                    "max_iterations": MMFF_MAX_ITERS,
+                    "validation_thresholds": {
+                        "max_mw": MAX_MW_FOR_DOCKING,
+                        "max_heavy_atoms": MAX_HEAVY_ATOMS,
+                        "max_rotatable_bonds": MAX_ROTATABLE_BONDS,
+                    },
+                    "compounds_passed_validation": len(prepared_ligands),
+                    "compounds_failed_validation": len(validation_failures),
+                    "compounds_failed_prep": len(prep_failures) - len(validation_failures),
+                },
             }
 
         finally:

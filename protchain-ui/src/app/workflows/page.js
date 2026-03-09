@@ -48,6 +48,7 @@ export default function WorkflowsPage() {
   const [error, setError] = useState(null);
   const [invalidToken, setInvalidToken] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [blockchainStatuses, setBlockchainStatuses] = useState({});
   
   const handleLogout = () => {
     // Clear token from localStorage
@@ -191,6 +192,27 @@ export default function WorkflowsPage() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
+
+  // Fetch blockchain status for each workflow to track per-stage progress
+  useEffect(() => {
+    if (workflows.length === 0) return;
+    const fetchStatuses = async () => {
+      const statuses = {};
+      await Promise.all(
+        workflows.map(async (w) => {
+          try {
+            const res = await fetch(`/api/workflow/${w.id}/blockchain-status`);
+            if (res.ok) {
+              const data = await res.json();
+              statuses[w.id] = data.stages || {};
+            }
+          } catch (_) { /* ignore */ }
+        })
+      );
+      setBlockchainStatuses(statuses);
+    };
+    fetchStatuses();
+  }, [workflows]);
 
   const handleCreateWorkflow = async () => {
     try {
@@ -341,7 +363,6 @@ export default function WorkflowsPage() {
   };
 
   const getStageProgress = (workflow) => {
-    // Calculate progress from blockchain commits + local completions in localStorage
     const stageOrder = [
       { id: 'structure_preparation', label: 'Structure Preparation' },
       { id: 'binding_site_analysis', label: 'Binding Site Analysis' },
@@ -351,37 +372,30 @@ export default function WorkflowsPage() {
     ];
     const totalStages = stageOrder.length;
 
-    // Check blockchain commits from localStorage
-    let recentCommits = {};
-    try {
-      recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
-    } catch (e) { /* ignore */ }
-    const workflowCommits = recentCommits[workflow.id] || {};
+    // Use server-side blockchain status (per-stage commits stored in blockchain.json)
+    const bcStages = blockchainStatuses[workflow.id] || {};
 
-    // Check local (non-blockchain) completions
-    let localCompletions = {};
-    try {
-      localCompletions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
-    } catch (e) { /* ignore */ }
-    const workflowLocalCompletions = localCompletions[workflow.id] || {};
+    // Also use workflow.status from the Go backend as a fallback
+    const statusMap = {
+      structure_processed: 1,
+      completed: totalStages,
+    };
+    const backendCompleted = statusMap[workflow.status] || 0;
 
-    // Count completed stages (blockchain or local)
     let completed = 0;
     let currentLabel = stageOrder[0].label;
 
     for (let i = 0; i < stageOrder.length; i++) {
       const stageId = stageOrder[i].id;
-      const isCommitted = !!workflowCommits[stageId];
-      const isLocallyCompleted = !!workflowLocalCompletions[stageId];
+      const isCommitted = !!bcStages[stageId];
 
-      if (isCommitted || isLocallyCompleted) {
+      if (isCommitted || i < backendCompleted) {
         completed++;
       } else {
         currentLabel = stageOrder[i].label;
         break;
       }
 
-      // If all done
       if (i === stageOrder.length - 1) {
         currentLabel = 'Complete';
       }

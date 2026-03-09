@@ -757,7 +757,7 @@ func (h *TeamHandler) ListInvitations(c *gin.Context) {
 	}
 
 	rows, err := h.db.Query(`
-		SELECT i.id, i.organization_id, i.team_id, i.email, i.role, i.status, i.expires_at, i.created_at,
+		SELECT i.id, i.token, i.organization_id, i.team_id, i.email, i.role, i.status, i.expires_at, i.created_at,
 		       u.id, u.email, u.first_name, u.last_name,
 		       o.id, o.name
 		FROM invitations i
@@ -775,6 +775,7 @@ func (h *TeamHandler) ListInvitations(c *gin.Context) {
 
 	type InvitationItem struct {
 		ID               int       `json:"id"`
+		Token            string    `json:"token"`
 		OrganizationID   *int      `json:"organization_id"`
 		TeamID           *int      `json:"team_id"`
 		Email            string    `json:"email"`
@@ -794,7 +795,7 @@ func (h *TeamHandler) ListInvitations(c *gin.Context) {
 		var inv InvitationItem
 		var orgName sql.NullString
 		var orgIDNull sql.NullInt64
-		if err := rows.Scan(&inv.ID, &inv.OrganizationID, &inv.TeamID, &inv.Email, &inv.Role,
+		if err := rows.Scan(&inv.ID, &inv.Token, &inv.OrganizationID, &inv.TeamID, &inv.Email, &inv.Role,
 			&inv.Status, &inv.ExpiresAt, &inv.CreatedAt,
 			&inv.InvitedByID, &inv.InvitedByEmail, &inv.InvitedByFirst, &inv.InvitedByLast,
 			&orgIDNull, &orgName); err != nil {

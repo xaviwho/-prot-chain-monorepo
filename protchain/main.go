@@ -159,6 +159,11 @@ func main() {
 			simulation.POST("/molecular-dynamics", workflowHandler.MolecularDynamics)
 		}
 
+		optimization := protected.Group("/optimization")
+		{
+			optimization.POST("/lead-optimization", workflowHandler.LeadOptimization)
+		}
+
 		binding := protected.Group("/binding")
 		{
 			binding.POST("/direct-binding-analysis", workflowHandler.DirectBindingAnalysis)

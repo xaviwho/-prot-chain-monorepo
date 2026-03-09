@@ -666,7 +666,7 @@ Resources:
             - Name: IPFS_ENDPOINT
               Value: http://localhost:5001
             - Name: BLOCKCHAIN_RPC
-              Value: https://purechainnode.com:8547
+              Value: https://purechainnode.com
           PortMappings:
             - ContainerPort: 8082
               Protocol: tcp

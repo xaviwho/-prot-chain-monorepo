@@ -27,6 +27,7 @@ import {
   PlayArrow,
   CloudUpload,
 } from '@mui/icons-material';
+import { getIpfsGatewayUrl } from '@/lib/api';
 
 export default function WorkflowStages({
   workflowId,
@@ -35,6 +36,7 @@ export default function WorkflowStages({
   onBindingSiteAnalysisComplete,
   onVirtualScreeningComplete,
   onMolecularDynamicsComplete,
+  onLeadOptimizationComplete,
   onStageClick,
 }) {
   const [pdbId, setPdbId] = useState('');
@@ -43,6 +45,7 @@ export default function WorkflowStages({
   const [success, setSuccess] = useState(null);
   const [workflowData, setWorkflowData] = useState(null);
   const [completedStages, setCompletedStages] = useState(new Set());
+  const [blockchainStages, setBlockchainStages] = useState({});
 
   // Compound library selection state
   const [compoundSource, setCompoundSource] = useState('fda_approved');
@@ -81,53 +84,27 @@ export default function WorkflowStages({
             setCompletedStages(new Set(data.completed_stages));
           }
           
-          // Check for blockchain commits in localStorage (stage-specific)
-          const recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
-          // Check for local (non-blockchain) completions
-          const localCompletions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
+          // Fetch blockchain status from server
+          try {
+            const bcResponse = await fetch(`/api/workflow/${workflowId}/blockchain-status`);
+            if (bcResponse.ok) {
+              const bcData = await bcResponse.json();
+              const stages = bcData.stages || {};
+              setBlockchainStages(stages);
+              data.blockchainByStage = stages;
 
-          if (recentCommits[workflowId]) {
-            // Store stage-specific blockchain data
-            data.blockchainByStage = recentCommits[workflowId];
-            
-            // Add general blockchain data for backward compatibility (use structure_preparation as default)
-            if (recentCommits[workflowId].structure_preparation) {
-              data.blockchain = {
-                transaction_hash: recentCommits[workflowId].structure_preparation.txHash,
-                ipfs_hash: recentCommits[workflowId].structure_preparation.ipfsHash,
-                timestamp: recentCommits[workflowId].structure_preparation.timestamp
-              };
+              // Mark blockchain-committed stages as completed
+              const newCompletedStages = new Set(data.completed_stages || []);
+              Object.keys(stages).forEach(stageId => {
+                if (stages[stageId]?.txHash) {
+                  newCompletedStages.add(stageId);
+                }
+              });
+              setCompletedStages(newCompletedStages);
+              setWorkflowData({...data});
             }
-            
-            setWorkflowData({...data});
-            
-            // Mark stages as completed based on their blockchain commits
-            const newCompletedStages = new Set(data.completed_stages || []);
-            
-            if (recentCommits[workflowId].structure_preparation) {
-              newCompletedStages.add('structure_preparation');
-            }
-            
-            if (recentCommits[workflowId].binding_site_analysis) {
-              newCompletedStages.add('binding_site_analysis');
-              
-              // Auto-advance to next stage (Virtual Screening) after binding site analysis
-              if (data.stage === 'binding_site_analysis') {
-                data.stage = 'virtual_screening';
-                setWorkflowData({...data});
-              }
-            }
-            
-            setCompletedStages(newCompletedStages);
-          }
-
-          // Also mark stages completed via local completions
-          if (localCompletions[workflowId]) {
-            const newCompletedStages = new Set(completedStages);
-            Object.keys(localCompletions[workflowId]).forEach(stageId => {
-              newCompletedStages.add(stageId);
-            });
-            setCompletedStages(newCompletedStages);
+          } catch (bcError) {
+            // Non-fatal — blockchain status not available
           }
         }
       } catch (error) {
@@ -138,6 +115,23 @@ export default function WorkflowStages({
       fetchWorkflowState();
     }
   }, [workflowId]);
+
+  // Refresh blockchain status from server after a stage completes
+  const refreshBlockchainStatus = async () => {
+    try {
+      const bcResponse = await fetch(`/api/workflow/${workflowId}/blockchain-status`);
+      if (bcResponse.ok) {
+        const bcData = await bcResponse.json();
+        const stages = bcData.stages || {};
+        setBlockchainStages(stages);
+
+        // Update workflowData with blockchain info
+        setWorkflowData(prev => prev ? { ...prev, blockchainByStage: stages } : prev);
+      }
+    } catch (e) {
+      // Non-fatal
+    }
+  };
 
   const stages = [
     {
@@ -184,22 +178,11 @@ export default function WorkflowStages({
   };
 
   const getStageStatus = (stageId) => {
-    // Check if stage is completed based on blockchain commits
-    const recentCommits = JSON.parse(localStorage.getItem('recentBlockchainCommits') || '{}');
-    const workflowCommits = recentCommits[workflowId] || {};
-    // Check local (non-blockchain) completions
-    const localCompletions = JSON.parse(localStorage.getItem('stageCompletions') || '{}');
-    const workflowLocalCompletions = localCompletions[workflowId] || {};
-
-    const isBlockchainCommitted = !!workflowCommits[stageId];
-    const isLocallyCompleted = !!workflowLocalCompletions[stageId];
+    // Check if stage is completed based on blockchain commits (from server)
+    const isBlockchainCommitted = !!blockchainStages[stageId]?.txHash;
 
     if (isBlockchainCommitted) {
-      return 'completed'; // Green checkmark
-    }
-
-    if (isLocallyCompleted) {
-      return 'completed_local'; // Amber indicator — done but not on blockchain
+      return 'completed'; // Green checkmark — on-chain
     }
 
     // Check if stage is completed based on API data
@@ -216,10 +199,10 @@ export default function WorkflowStages({
       return 'active';
     }
 
-    // For subsequent stages, check if previous stage is completed (either way)
+    // For subsequent stages, check if previous stage is completed
     if (currentStageIndex > 0) {
       const previousStage = stageOrder[currentStageIndex - 1];
-      const isPreviousCompleted = !!workflowCommits[previousStage] || !!workflowLocalCompletions[previousStage] || workflowData?.completed_stages?.includes(previousStage);
+      const isPreviousCompleted = !!blockchainStages[previousStage]?.txHash || workflowData?.completed_stages?.includes(previousStage);
 
       if (isPreviousCompleted) {
         return 'active';
@@ -269,28 +252,10 @@ export default function WorkflowStages({
       
       setSuccess('Structure processed successfully!');
       setCompletedStages(prev => new Set([...prev, 'structure_preparation']));
-      
-      // Refresh workflow state to update progress immediately
-      try {
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-        
-        const workflowResponse = await fetch(`/api/v1/workflows/${workflowId}`, { headers });
-        if (workflowResponse.ok) {
-          const updatedWorkflowData = await workflowResponse.json();
-          setWorkflowData(updatedWorkflowData);
-          
-          if (updatedWorkflowData.completed_stages) {
-            setCompletedStages(new Set(updatedWorkflowData.completed_stages));
-          }
-          
-        }
-      } catch (refreshError) {
-      }
-      
+
+      // Refresh blockchain status to show tx hash / IPFS on the stage card
+      await refreshBlockchainStatus();
+
       if (onStructureAnalysisComplete) {
         // Include the PDB ID that was searched in the results
         const resultsWithPdbId = {
@@ -339,7 +304,10 @@ export default function WorkflowStages({
       
       setSuccess('Binding site analysis completed!');
       setCompletedStages(prev => new Set([...prev, 'binding_site_analysis']));
-      
+
+      // Refresh blockchain status to show tx hash / IPFS on the stage card
+      await refreshBlockchainStatus();
+
       if (onBindingSiteAnalysisComplete) {
         onBindingSiteAnalysisComplete(results);
       }
@@ -388,30 +356,12 @@ export default function WorkflowStages({
       setSuccess(`Virtual screening completed! Found ${results.hits_found || 0} promising compounds.`);
       setCompletedStages(prev => new Set([...prev, 'virtual_screening']));
 
+      // Refresh blockchain status to show tx hash / IPFS on the stage card
+      await refreshBlockchainStatus();
+
       // Notify parent with virtual screening results
       if (onVirtualScreeningComplete) {
         onVirtualScreeningComplete(results);
-      }
-      
-      // Refresh workflow state to update progress immediately
-      try {
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-        
-        const workflowResponse = await fetch(`/api/v1/workflows/${workflowId}`, { headers });
-        if (workflowResponse.ok) {
-          const updatedWorkflowData = await workflowResponse.json();
-          setWorkflowData(updatedWorkflowData);
-          
-          if (updatedWorkflowData.completed_stages) {
-            setCompletedStages(new Set(updatedWorkflowData.completed_stages));
-          }
-          
-        }
-      } catch (refreshError) {
       }
       
     } catch (err) {
@@ -493,21 +443,57 @@ export default function WorkflowStages({
       );
       setCompletedStages(prev => new Set([...prev, 'molecular_dynamics']));
 
+      // Refresh blockchain status to show tx hash / IPFS on the stage card
+      await refreshBlockchainStatus();
+
       if (onMolecularDynamicsComplete) {
         onMolecularDynamicsComplete(results);
       }
 
-      // Refresh workflow state
-      try {
-        const workflowResponse = await fetch(`/api/v1/workflows/${workflowId}`, { headers: { Authorization: `Bearer ${token}` } });
-        if (workflowResponse.ok) {
-          const updatedWorkflowData = await workflowResponse.json();
-          setWorkflowData(updatedWorkflowData);
-          if (updatedWorkflowData.completed_stages) {
-            setCompletedStages(new Set(updatedWorkflowData.completed_stages));
-          }
-        }
-      } catch (refreshError) {}
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLeadOptimization = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(`/api/workflow/${workflowId}/lead-optimization`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          max_compounds: 20,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Lead optimization failed: ${response.statusText}`);
+      }
+
+      const results = await response.json();
+
+      setSuccess(
+        `Lead optimization completed! ${results.compounds_analyzed || 0} compounds analyzed, ` +
+        `${results.advance_count || 0} ready to advance.`
+      );
+      setCompletedStages(prev => new Set([...prev, 'lead_optimization']));
+
+      // Refresh blockchain status
+      await refreshBlockchainStatus();
+
+      if (onLeadOptimizationComplete) {
+        onLeadOptimizationComplete(results);
+      }
 
     } catch (err) {
       setError(err.message);
@@ -531,7 +517,7 @@ export default function WorkflowStages({
         await handleMolecularDynamics();
         break;
       case 'lead_optimization':
-        setError(`${stages.find(s => s.id === stageId)?.title} is not yet implemented`);
+        await handleLeadOptimization();
         break;
       default:
         break;
@@ -542,8 +528,7 @@ export default function WorkflowStages({
     const status = getStageStatus(stage.id);
     const isActive = status === 'active';
     const isCompleted = status === 'completed';
-    const isCompletedLocal = status === 'completed_local';
-    const isDone = isCompleted || isCompletedLocal;
+    const isDone = isCompleted;
     const isPending = status === 'pending';
     const isClickable = isDone && onStageClick;
 
@@ -553,7 +538,7 @@ export default function WorkflowStages({
           onClick={isClickable ? () => onStageClick(stage.id) : undefined}
           sx={{
             height: '100%',
-            border: isActive ? `2px solid ${stage.color}` : isCompletedLocal ? '2px solid #FF9800' : '1px solid #e0e0e0',
+            border: isActive ? `2px solid ${stage.color}` : '1px solid #e0e0e0',
             boxShadow: isActive ? 3 : 1,
             opacity: isPending ? 0.6 : 1,
             cursor: isClickable ? 'pointer' : 'default',
@@ -566,21 +551,21 @@ export default function WorkflowStages({
                 sx={{
                   p: 1,
                   borderRadius: '50%',
-                  backgroundColor: isCompleted ? '#4CAF50' : isCompletedLocal ? '#FF9800' : stage.color + '20',
-                  color: isDone ? 'white' : stage.color,
+                  backgroundColor: isCompleted ? '#4CAF50' : stage.color + '20',
+                  color: isCompleted ? 'white' : stage.color,
                   mr: 2
                 }}
               >
-                {isCompleted ? <CheckCircle /> : isCompletedLocal ? <CheckCircle /> : stage.icon}
+                {isCompleted ? <CheckCircle /> : stage.icon}
               </Box>
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" component="h3">
                   {stage.title}
                 </Typography>
                 <Chip
-                  label={isCompletedLocal ? 'COMPLETED (LOCAL)' : status.toUpperCase()}
+                  label={status.toUpperCase()}
                   size="small"
-                  color={isCompleted ? 'success' : isCompletedLocal ? 'warning' : isActive ? 'primary' : 'default'}
+                  color={isCompleted ? 'success' : isActive ? 'primary' : 'default'}
                 />
                 {isClickable && (
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
@@ -792,23 +777,14 @@ export default function WorkflowStages({
                     <>
                       {txHash && (
                         <Typography variant="caption" sx={{ display: 'block', mb: 0.5 }}>
-                          <strong>Tx Hash:</strong> 
-                          <a 
-                            href={`https://nsllab-kit.onrender.com/purechain/api/v1/tx/${txHash}`}
-                            target="_blank" 
+                          <strong>Tx:</strong>{' '}
+                          <a
+                            href={`https://purechain-explorer.onrender.com/tx/${txHash}`}
+                            target="_blank"
                             rel="noopener noreferrer"
                             style={{ color: '#1976d2', textDecoration: 'none' }}
                           >
                             {txHash.substring(0, 10)}...
-                          </a>
-                          {' | '}
-                          <a 
-                            href={`https://nsllab-kit.onrender.com/purechain/api/v1/tx/${txHash}/receipt`}
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            style={{ color: '#1976d2', textDecoration: 'none' }}
-                          >
-                            Receipt
                           </a>
                         </Typography>
                       )}
@@ -816,7 +792,7 @@ export default function WorkflowStages({
                         <Typography variant="caption" sx={{ display: 'block' }}>
                           <strong>IPFS:</strong> 
                           <a 
-                            href={`https://gateway.pinata.cloud/ipfs/${ipfsHash}`}
+                            href={`${getIpfsGatewayUrl()}/ipfs/${ipfsHash}`}
                             target="_blank" 
                             rel="noopener noreferrer"
                             style={{ color: '#1976d2', textDecoration: 'none' }}
@@ -921,10 +897,7 @@ export default function WorkflowStages({
         </Typography>
         {(() => {
           const total = stages.length;
-          const completedStatuses = stages.map(s => getStageStatus(s.id));
-          const blockchainCount = completedStatuses.filter(st => st === 'completed').length;
-          const localCount = completedStatuses.filter(st => st === 'completed_local').length;
-          const completed = blockchainCount + localCount;
+          const completed = stages.filter(s => getStageStatus(s.id) === 'completed').length;
           const percentage = total > 0 ? (completed / total) * 100 : 0;
           return (
             <>
@@ -937,17 +910,12 @@ export default function WorkflowStages({
                   backgroundColor: 'rgba(76, 175, 80, 0.15)',
                   '& .MuiLinearProgress-bar': {
                     borderRadius: 4,
-                    backgroundColor: blockchainCount === completed ? '#4CAF50' : '#FF9800',
+                    backgroundColor: '#4CAF50',
                   },
                 }}
               />
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                 {completed} of {total} stages completed
-                {localCount > 0 && blockchainCount < completed && (
-                  <span style={{ color: '#FF9800', marginLeft: 8 }}>
-                    ({localCount} pending blockchain commit)
-                  </span>
-                )}
               </Typography>
             </>
           );

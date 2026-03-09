@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import { commitStageToBlockchain } from '../../../../../utils/blockchainCommit';
 
-// Allow up to 10 minutes for long-running MD simulations
-export const maxDuration = 600;
+// Allow up to 30 minutes for long-running MD simulations
+export const maxDuration = 1800;
 
 /**
  * Long-running POST using Node http module to avoid undici headers timeout.
  */
-function longPost(url, headers, body, timeoutMs = 600000) {
+function longPost(url, headers, body, timeoutMs = 1800000) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const options = {
@@ -150,6 +151,11 @@ export async function POST(request, { params }) {
       console.error('Failed to save MD results:', saveError);
     }
 
+    // Automatic blockchain commit (non-fatal)
+    const blockchainResult = await commitStageToBlockchain(
+      id, 'molecular_dynamics', existingResults.molecular_dynamics, request
+    );
+
     return NextResponse.json({
       status: 'success',
       message: 'Molecular dynamics simulation completed successfully',
@@ -167,6 +173,7 @@ export async function POST(request, { params }) {
       residue_rmsf_summary: mdData.residue_rmsf_summary,
       binding_site_used: mdData.binding_site_used,
       total_computation_time_seconds: mdData.total_computation_time_seconds,
+      blockchain: blockchainResult,
     });
 
   } catch (error) {

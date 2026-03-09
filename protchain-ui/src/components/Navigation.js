@@ -67,6 +67,7 @@ export default function Navigation() {
             {[
               { href: '/workflows', label: 'Workflows' },
               { href: '/organizations', label: 'Organizations' },
+              { href: '/invitations', label: 'Invitations' },
               { href: '/pureprot', label: 'CLI Tools' },
               { href: '/protein', label: 'Protein Analysis' },
             ].map(({ href, label }) => (

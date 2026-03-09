@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api';
 import {
   Box,
   Typography,
@@ -19,14 +18,14 @@ import {
   Alert,
   CircularProgress,
   Avatar,
-  Tooltip
+  Tooltip,
+  Snackbar
 } from '@mui/material';
 import {
   Add as AddIcon,
   Business as BusinessIcon,
   People as PeopleIcon,
   Group as GroupIcon,
-  AdminPanelSettings as AdminIcon,
   Settings as SettingsIcon,
   Share as ShareIcon,
   Delete as DeleteIcon
@@ -38,12 +37,9 @@ function OrganizationsPageContent() {
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [newOrg, setNewOrg] = useState({
-    name: '',
-    description: '',
-    domain: ''
-  });
+  const [newOrg, setNewOrg] = useState({ name: '', description: '', domain: '' });
   const [creating, setCreating] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -53,6 +49,10 @@ function OrganizationsPageContent() {
   const [sharing, setSharing] = useState(false);
   const router = useRouter();
 
+  const getToken = () =>
+    localStorage.getItem('token') ||
+    document.cookie.split('; ').find(r => r.startsWith('token='))?.split('=')[1];
+
   useEffect(() => {
     fetchOrganizations();
   }, []);
@@ -60,37 +60,25 @@ function OrganizationsPageContent() {
   const fetchOrganizations = async () => {
     try {
       setLoading(true);
-      setError(''); // Clear previous errors
-      
-      // Use fetch to call the frontend API endpoint directly
-      const token = localStorage.getItem('token') || document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+      setError('');
       const response = await fetch('/api/v1/teams/organizations', {
-        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getToken()}`,
           'Content-Type': 'application/json',
         },
       });
-      
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-      
+
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
       const responseData = await response.json();
-      
-      if (responseData && responseData.success && Array.isArray(responseData.data)) {
+
+      if (responseData.success && Array.isArray(responseData.data)) {
         setOrganizations(responseData.data);
       } else {
         setOrganizations([]);
       }
     } catch (err) {
-      
-      // Handle different types of errors
-      if (err.message.includes('Server error:')) {
-        setError(`Failed to load organizations: ${err.message}`);
-      } else {
-        setError(`Failed to load organizations: ${err.message}`);
-      }
+      setError(`Failed to load organizations: ${err.message}`);
       setOrganizations([]);
     } finally {
       setLoading(false);
@@ -105,47 +93,27 @@ function OrganizationsPageContent() {
 
     try {
       setCreating(true);
-      setError(''); // Clear previous errors
-      
-      // Use fetch to call the frontend API endpoint directly
-      const token = localStorage.getItem('token') || document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+      setError('');
       const response = await fetch('/api/v1/teams/organizations', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getToken()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newOrg)
+        body: JSON.stringify(newOrg),
       });
-      
+
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
       }
-      
-      const responseData = await response.json();
-      
-      // Handle successful response
-      if (responseData && responseData.success && responseData.data) {
-        setOrganizations(prev => [...prev, responseData.data]);
-        setCreateDialogOpen(false);
-        setNewOrg({ name: '', description: '', domain: '' });
-      } else {
-        throw new Error('Invalid response format from server');
-      }
+
+      setCreateDialogOpen(false);
+      setNewOrg({ name: '', description: '', domain: '' });
+      setSuccess('Organization created successfully');
+      fetchOrganizations();
     } catch (err) {
-      
-      // Handle different types of errors
-      if (err.response) {
-        // Server responded with error status
-        const errorMessage = err.response.data?.message || `Server error: ${err.response.status}`;
-        setError(`Failed to create organization: ${errorMessage}`);
-      } else if (err.request) {
-        // Network error - backend not running
-        setError('Cannot connect to server. Please ensure the backend is running.');
-      } else {
-        // Other error
-        setError(`Failed to create organization: ${err.message}`);
-      }
+      setError(`Failed to create organization: ${err.message}`);
     } finally {
       setCreating(false);
     }
@@ -157,30 +125,23 @@ function OrganizationsPageContent() {
     try {
       setDeleting(true);
       setError('');
-      
-      const token = localStorage.getItem('token') || document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
-      const response = await fetch(`/api/v1/teams/organizations?id=${selectedOrg.id}`, {
+      const response = await fetch(`/api/v1/teams/organizations/${selectedOrg.id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getToken()}`,
           'Content-Type': 'application/json',
         },
       });
-      
+
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
       }
-      
-      const responseData = await response.json();
-      
-      if (responseData && responseData.success) {
-        // Remove organization from local state
-        setOrganizations(prev => prev.filter(org => org.id !== selectedOrg.id));
-        setDeleteDialogOpen(false);
-        setSelectedOrg(null);
-      } else {
-        throw new Error('Failed to delete organization');
-      }
+
+      setOrganizations(prev => prev.filter(org => org.id != selectedOrg.id));
+      setDeleteDialogOpen(false);
+      setSelectedOrg(null);
+      setSuccess('Organization deleted successfully');
     } catch (err) {
       setError(`Failed to delete organization: ${err.message}`);
     } finally {
@@ -194,37 +155,26 @@ function OrganizationsPageContent() {
     try {
       setSharing(true);
       setError('');
-      
-      const token = localStorage.getItem('token') || document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
       const response = await fetch(`/api/v1/teams/organizations/${selectedOrg.id}/invite`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getToken()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          email: shareEmail.trim(),
-          role: 'member'
-        })
+        body: JSON.stringify({ email: shareEmail.trim(), role: 'member' }),
       });
-      
+
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
       }
-      
-      const responseData = await response.json();
-      
-      if (responseData && responseData.success) {
-        setShareDialogOpen(false);
-        setSelectedOrg(null);
-        setShareEmail('');
-        // Show success message
-        setError(''); // Clear any previous errors
-      } else {
-        throw new Error('Failed to send invitation');
-      }
+
+      setShareDialogOpen(false);
+      setSelectedOrg(null);
+      setShareEmail('');
+      setSuccess('Invitation sent successfully');
     } catch (err) {
-      setError(`Failed to share organization: ${err.message}`);
+      setError(`Failed to send invitation: ${err.message}`);
     } finally {
       setSharing(false);
     }
@@ -239,9 +189,7 @@ function OrganizationsPageContent() {
   };
 
   const getPlanLabel = (plan) => {
-    if (!plan || typeof plan !== 'string') {
-      return 'Free'; // Default plan
-    }
+    if (!plan || typeof plan !== 'string') return 'Free';
     return plan.charAt(0).toUpperCase() + plan.slice(1);
   };
 
@@ -269,7 +217,7 @@ function OrganizationsPageContent() {
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => setCreateDialogOpen(true)}
-          sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+          sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
         >
           Create Organization
         </Button>
@@ -296,7 +244,7 @@ function OrganizationsPageContent() {
               variant="contained"
               startIcon={<AddIcon />}
               onClick={() => setCreateDialogOpen(true)}
-              sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+              sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
             >
               Create Organization
             </Button>
@@ -306,43 +254,25 @@ function OrganizationsPageContent() {
         <Grid container spacing={3}>
           {organizations.map((org) => (
             <Grid item xs={12} md={6} lg={4} key={org.id}>
-              <Card 
-                sx={{ 
-                  height: '100%', 
+              <Card
+                sx={{
+                  height: '100%',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
-                  '&:hover': { 
-                    transform: 'translateY(-2px)',
-                    boxShadow: 4
-                  }
+                  '&:hover': { transform: 'translateY(-2px)', boxShadow: 4 },
                 }}
                 onClick={() => router.push(`/organizations/${org.id}`)}
               >
                 <CardContent>
                   <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
-                    <Avatar sx={{ bgcolor: '#2e7d32', width: 48, height: 48 }}>
+                    <Avatar sx={{ bgcolor: '#16a34a', width: 48, height: 48 }}>
                       <BusinessIcon />
                     </Avatar>
                     <Box display="flex" gap={1}>
-                      <Chip 
-                        label={getPlanLabel(org.plan)} 
-                        size="small" 
-                        color={getPlanColor(org.plan)}
-                      />
-                      <Tooltip title="Organization Settings">
-                        <IconButton 
-                          size="small" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/organizations/${org.id}/settings`);
-                          }}
-                        >
-                          <SettingsIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      <Chip label={getPlanLabel(org.plan)} size="small" color={getPlanColor(org.plan)} />
                       <Tooltip title="Delete Organization">
-                        <IconButton 
-                          size="small" 
+                        <IconButton
+                          size="small"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedOrg(org);
@@ -352,8 +282,8 @@ function OrganizationsPageContent() {
                           <DeleteIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="Share Organization">
-                        <IconButton 
+                      <Tooltip title="Invite User">
+                        <IconButton
                           size="small"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -370,18 +300,18 @@ function OrganizationsPageContent() {
                   <Typography variant="h6" gutterBottom noWrap>
                     {org.name}
                   </Typography>
-                  
+
                   {org.description && (
-                    <Typography 
-                      variant="body2" 
-                      color="text.secondary" 
-                      sx={{ 
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{
                         mb: 2,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical'
+                        WebkitBoxOrient: 'vertical',
                       }}
                     >
                       {org.description}
@@ -394,20 +324,14 @@ function OrganizationsPageContent() {
                     </Typography>
                   )}
 
-                  <Box display="flex" justifyContent="space-between" alignItems="center">
-                    <Box display="flex" gap={2}>
-                      <Box display="flex" alignItems="center" gap={0.5}>
-                        <PeopleIcon fontSize="small" color="action" />
-                        <Typography variant="caption">
-                          {org.member_count} members
-                        </Typography>
-                      </Box>
-                      <Box display="flex" alignItems="center" gap={0.5}>
-                        <GroupIcon fontSize="small" color="action" />
-                        <Typography variant="caption">
-                          {org.team_count} teams
-                        </Typography>
-                      </Box>
+                  <Box display="flex" gap={2}>
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                      <PeopleIcon fontSize="small" color="action" />
+                      <Typography variant="caption">{org.member_count || 0} members</Typography>
+                    </Box>
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                      <GroupIcon fontSize="small" color="action" />
+                      <Typography variant="caption">{org.team_count || 0} teams</Typography>
                     </Box>
                   </Box>
                 </CardContent>
@@ -418,12 +342,7 @@ function OrganizationsPageContent() {
       )}
 
       {/* Create Organization Dialog */}
-      <Dialog 
-        open={createDialogOpen} 
-        onClose={() => setCreateDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Create New Organization</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1 }}>
@@ -458,14 +377,12 @@ function OrganizationsPageContent() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button 
+          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button
             onClick={handleCreateOrganization}
             variant="contained"
             disabled={creating || !newOrg.name.trim()}
-            sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+            sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
           >
             {creating ? <CircularProgress size={20} /> : 'Create Organization'}
           </Button>
@@ -473,23 +390,16 @@ function OrganizationsPageContent() {
       </Dialog>
 
       {/* Delete Organization Dialog */}
-      <Dialog 
-        open={deleteDialogOpen} 
-        onClose={() => setDeleteDialogOpen(false)}
-        maxWidth="xs"
-        fullWidth
-      >
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Delete Organization</DialogTitle>
         <DialogContent>
           <Typography variant="body1" sx={{ mb: 2 }}>
-            Are you sure you want to delete the organization "{selectedOrg?.name}"?
+            Are you sure you want to delete &quot;{selectedOrg?.name}&quot;? This will remove all teams, members, and invitations.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button 
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button
             onClick={handleDeleteOrganization}
             variant="contained"
             disabled={deleting}
@@ -500,14 +410,9 @@ function OrganizationsPageContent() {
         </DialogActions>
       </Dialog>
 
-      {/* Share Organization Dialog */}
-      <Dialog 
-        open={shareDialogOpen} 
-        onClose={() => setShareDialogOpen(false)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>Share Organization</DialogTitle>
+      {/* Invite User Dialog */}
+      <Dialog open={shareDialogOpen} onClose={() => setShareDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Invite User to {selectedOrg?.name}</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1 }}>
             <TextField
@@ -522,19 +427,26 @@ function OrganizationsPageContent() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShareDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button 
+          <Button onClick={() => setShareDialogOpen(false)}>Cancel</Button>
+          <Button
             onClick={handleShareOrganization}
             variant="contained"
             disabled={sharing || !shareEmail.trim()}
-            sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+            sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
           >
-            {sharing ? <CircularProgress size={20} /> : 'Share Organization'}
+            {sharing ? <CircularProgress size={20} /> : 'Send Invitation'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success Snackbar */}
+      <Snackbar
+        open={!!success}
+        autoHideDuration={4000}
+        onClose={() => setSuccess('')}
+        message={success}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 }
